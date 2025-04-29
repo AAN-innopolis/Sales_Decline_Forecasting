@@ -1,7 +1,6 @@
 #run using bash (windows). Other operating systems dont know :)
 # working directory /scripts
 
-cd ..
 mkdir data
 cd data || exit
 
@@ -11,3 +10,4 @@ curl -L -o liquor-sales.zip\
 unzip liquor-sales.zip
 
 rm liquor-sales.zip
+
