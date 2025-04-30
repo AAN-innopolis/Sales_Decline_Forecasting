@@ -217,7 +217,7 @@ def create_rolling_features(df, logger, target='sale_dollars'):
         # Formula: ((current/mean) - 1) * 100
         # -1 centers around 0: if current = mean, result is 0%
         df_features[f'purchase_momentum_pct_{window}'] = (
-            (df_features[target] / df_features[f'hist_mean_{window}_purchases_{target}'] - 1) * 100
+            (df_features[target] / df_features[f'hist_mean_{window}_purchases_{target}'].replace(0, np.nan) - 1) * 100
         )
         # Calculate average days between purchases using historical data
         df_features[f'hist_avg_days_between_purchases_{window}'] = (
@@ -353,7 +353,7 @@ def clean_and_validate_data(df_clean, logger):
         # Fill gaps for all stores
         df_clean[missing_columns] = (df_clean
             .groupby('store')[missing_columns]
-            .transform(lambda x: x.bfill()#.ffill()
+            .transform(lambda x: x#.bfill().ffill()
                        )
         )
         missing_values = df_clean.isnull().sum()
