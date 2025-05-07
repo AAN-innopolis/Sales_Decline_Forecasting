@@ -23,7 +23,7 @@ def setup_logger(name=__name__,
         name: Logger name
         level: Logging level
     """
-    logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=level, format='%(levelname)s - %(message)s')
     
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -32,7 +32,7 @@ def setup_logger(name=__name__,
         console_handler = logging.StreamHandler()
         console_handler.setLevel(level)
         
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
         console_handler.setFormatter(formatter)
         
         logger.addHandler(console_handler)
