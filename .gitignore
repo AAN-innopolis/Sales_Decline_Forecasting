@@ -177,3 +177,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+*.db
+
+*.err
+
+src/airflow/logs/child_process/latest
