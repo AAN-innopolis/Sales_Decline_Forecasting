@@ -22,9 +22,3 @@ from src.utils.data_utils import (
 
 
 __all__ = ['setup_logger', 'load_data', 'save_data', 'setup_seed']
-try:
-    from src.utils.pg_connect import PostgresHandler
-    __all__.append('PostgresHandler')
-except ImportError as e:
-    logging.warning(f"Failed to import PostgresHandler: {e}")
-    # psycopg2 is not installed, but this should not prevent using other utilities
