@@ -34,8 +34,8 @@ if __name__ == "__main__":
     try:
         df = pd.read_csv(Path(settings.PROJECT_ROOT, args.input_file))
         # Sort by count of records per store-date combination
-        store_date_counts = df.groupby(['store', 'date']).size().reset_index(name='count')
-        df = df.merge(store_date_counts, on=['store', 'date']).sort_values('count', ascending=False).drop(columns=['count']).iloc[:100000]
+        store_date_counts = df.groupby(['store']).size().reset_index(name='count')
+        df = df.merge(store_date_counts, on=['store']).sort_values('count', ascending=False).drop(columns=['count'])#.iloc[:100000]
         logger.info(f"Data loaded. Shape: {df.shape}")
     except Exception as e:
         raise Exception(f"Error while loading data: {e}")
