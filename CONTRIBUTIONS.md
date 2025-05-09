@@ -85,3 +85,8 @@ load_examples = False
 
 ⚠️ **Important**: Replace `PROJECT_ROOT` with the absolute path to your project directory in all configuration files.
 
+#### Notes
+- View distribution information
+> cat /etc/*-release
+- View public IP (used as LocalTunnel password)
+> curl https://loca.lt/mytunnelpassword

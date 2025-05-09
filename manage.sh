@@ -5,6 +5,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+AIRFLOW_PORT=8080
+MLFLOW_PORT=5000
+FEAST_PORT=8888
 
 print_message() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -17,7 +20,6 @@ print_error() {
 print_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
-
 
 start_airflow() {
     print_message "Starting Airflow locally..."
@@ -32,22 +34,30 @@ start_airflow() {
     
     if [ ! -f "${AIRFLOW_HOME}/db/airflow.db" ]; then
         print_message "Initializing Airflow database..."
-        airflow db migrate
+        uv run airflow db migrate
     else
         print_message "Airflow database already exists."
     fi
     
     print_message "Starting Airflow API server..."
-    nohup airflow api-server -p 8080 >| ${AIRFLOW_HOME}/logs/api_server/api_server.log 2>| ${AIRFLOW_HOME}/logs/api_server/api_server.err < /dev/null &
+    uv run nohup airflow api-server -p ${AIRFLOW_PORT} \
+        >| ${AIRFLOW_HOME}/logs/api_server/api_server.log \
+        2>| ${AIRFLOW_HOME}/logs/api_server/api_server.err < /dev/null &
     
     print_message "Starting Airflow scheduler..."
-    nohup airflow scheduler >| ${AIRFLOW_HOME}/logs/scheduler/scheduler.log 2>| ${AIRFLOW_HOME}/logs/scheduler/scheduler.err < /dev/null &
+    uv run nohup airflow scheduler \
+        >| ${AIRFLOW_HOME}/logs/scheduler/scheduler.log \
+        2>| ${AIRFLOW_HOME}/logs/scheduler/scheduler.err < /dev/null &
     
     print_message "Starting Airflow DAG processor..."
-    nohup airflow dag-processor >| ${AIRFLOW_HOME}/logs/dag_processor/dag_processor.log 2>| ${AIRFLOW_HOME}/logs/dag_processor/dag_processor.err < /dev/null &
+    uv run nohup airflow dag-processor \
+        >| ${AIRFLOW_HOME}/logs/dag_processor/dag_processor.log \
+        2>| ${AIRFLOW_HOME}/logs/dag_processor/dag_processor.err < /dev/null &
     
     print_message "Starting Airflow triggerer..."
-    nohup airflow triggerer >| ${AIRFLOW_HOME}/logs/triggerer/triggerer.log 2>| ${AIRFLOW_HOME}/logs/triggerer/triggerer.err < /dev/null &
+    uv run nohup airflow triggerer \
+        >| ${AIRFLOW_HOME}/logs/triggerer/triggerer.log \
+        2>| ${AIRFLOW_HOME}/logs/triggerer/triggerer.err < /dev/null &
 }
 
 start_mlflow() {
@@ -57,12 +67,14 @@ start_mlflow() {
     mkdir -p ${MLFLOW_HOME}/db
     mkdir -p ${MLFLOW_HOME}/logs
     
-    nohup mlflow server \
+    uv run nohup mlflow server \
         --backend-store-uri sqlite:///${MLFLOW_HOME}/db/mlflow.db \
         --default-artifact-root ${MLFLOW_HOME}/artifacts \
         --host 0.0.0.0 \
-        --port 5000 \
-        --workers 4 >| ${MLFLOW_HOME}/logs/mlflow.log 2>| ${MLFLOW_HOME}/logs/mlflow.err < /dev/null &
+        --port ${MLFLOW_PORT} \
+        --workers 4 \
+        >| ${MLFLOW_HOME}/logs/mlflow.log \
+        2>| ${MLFLOW_HOME}/logs/mlflow.err < /dev/null &
 }
 
 start_feast() {
@@ -73,11 +85,14 @@ start_feast() {
     mkdir -p ${FEAST_HOME}/logs/feast
     mkdir -p ${FEAST_HOME}/logs/feast_ui
     mkdir -p ${FEAST_HOME}/db
-    # export FEAST_REPO_PATH=FEAST_HOME
 
     cd ${FEAST_HOME}
-    nohup feast -f ${FEAST_CONFIG} serve >| ${FEAST_HOME}/logs/feast/feast.log 2>| ${FEAST_HOME}/logs/feast/feast.err < /dev/null &
-    nohup feast -f ${FEAST_CONFIG} ui >| ${FEAST_HOME}/logs/feast_ui/feast_ui.log 2>| ${FEAST_HOME}/logs/feast_ui/feast_ui.err < /dev/null &
+    uv run nohup feast -f ${FEAST_CONFIG} serve \
+        >| ${FEAST_HOME}/logs/feast/feast.log \
+        2>| ${FEAST_HOME}/logs/feast/feast.err < /dev/null &
+    uv run nohup feast -f ${FEAST_CONFIG} ui -p ${FEAST_PORT} \
+        >| ${FEAST_HOME}/logs/feast_ui/feast_ui.log \
+        2>| ${FEAST_HOME}/logs/feast_ui/feast_ui.err < /dev/null &
     cd - > /dev/null
 }
 
@@ -87,8 +102,26 @@ start_redis() {
     mkdir -p ${REDIS_HOME}/data
     mkdir -p ${REDIS_HOME}/logs
     
-    redis-server --dir ${REDIS_HOME}/data --logfile ${REDIS_HOME}/logs/redis.log --daemonize yes < /dev/null &
+    redis-server --dir ${REDIS_HOME}/data \
+        --logfile ${REDIS_HOME}/logs/redis.log \
+        --daemonize yes < /dev/null &
     print_message "Redis server started."
+}
+
+start_tunnels() {
+    print_message "Starting LocalTunnel..."
+    print_message "Public IP (to be used as password in LocalTunnel):"
+    curl https://loca.lt/mytunnelpassword \n
+    print_message "Airflow:"
+    lt --port ${AIRFLOW_PORT} &
+    sleep 10
+    print_message "MLflow:"
+    lt --port ${MLFLOW_PORT} &
+    sleep 10
+    print_message "Feast:"
+    lt --port ${FEAST_PORT} &
+    sleep 50
+    print_message "Tunnels started."
 }
 
 start_all() {
@@ -97,10 +130,8 @@ start_all() {
     start_airflow
     start_mlflow
     start_feast
-    print_message "All services started. Access them at:"
-    print_message "- Airflow API: http://localhost:8080"
-    print_message "- MLflow: http://localhost:5000"
-    print_message "- Feast: http://localhost:8888"
+    start_tunnels
+    print_message "All services started."
 }
 
 stop_airflow() {
@@ -144,7 +175,6 @@ check_status() {
     ps aux | grep feast | grep -v grep
 }
 
-
 case "$1" in
     "start-airflow")
         start_airflow
@@ -183,4 +213,4 @@ case "$1" in
         echo "Usage: $0 {start-airflow|start-mlflow|start-feast|start-redis|start-all|stop-airflow|stop-mlflow|stop-feast|stop-redis|stop-all|status}"
         exit 1
         ;;
-esac 
+esac
