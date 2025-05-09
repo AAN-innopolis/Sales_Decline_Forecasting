@@ -8,7 +8,8 @@ npm install -g localtunnel
 uv sync
 
 if [ ! -d "./data" ]; then
-  ./src/scripts/data_downloader.sh
+    chmod +x ./src/scripts/data_downloader.sh 
+    ./src/scripts/data_downloader.sh
 fi
 
 ./manage.sh start-all

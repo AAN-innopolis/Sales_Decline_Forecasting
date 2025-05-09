@@ -111,7 +111,7 @@ start_redis() {
 start_tunnels() {
     print_message "Starting LocalTunnel..."
     print_message "Public IP (to be used as password in LocalTunnel):"
-    curl https://loca.lt/mytunnelpassword \n
+    curl https://loca.lt/mytunnelpassword
     print_message "Airflow:"
     lt --port ${AIRFLOW_PORT} &
     sleep 10
