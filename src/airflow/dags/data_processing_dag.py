@@ -15,7 +15,7 @@ from airflow.models import Variable
 from airflow.configuration import conf
 from airflow.sdk import chain
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DAG_TASKS_DIR = PROJECT_ROOT / "src" / "airflow" / "dag_tasks"
 
 default_args = {
