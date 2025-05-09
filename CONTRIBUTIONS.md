@@ -1,5 +1,15 @@
 # Contributing to Sales Decline Forecasting Project
 
+## Quick Start
+
+To automatically set up and start all services in your node, run:
+```sh
+ chmod +x ./setup.sh
+./setup.sh
+```
+
+
+
 ## Environment Setup
 
 The project uses UV as both a package manager and environment creator. To set up the complete environment and install all dependencies, run:
@@ -27,9 +37,9 @@ The following services are available with their respective UI endpoints:
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| Airflow | http://localhost:8080 | Workflow management and scheduling |
-| MLflow | http://localhost:5000 | Experiment tracking and model management |
-| Feast | http://localhost:8888 | Feature store management |
+| Airflow | https://\<random\>.loca.lt | Workflow management and scheduling |
+| MLflow | https://\<random\>.loca.lt | Experiment tracking and model management |
+| Feast | https://\<random\>.loca.lt | Feature store management (now it's not available remotely) |
 
 ## Airflow Configuration
 
@@ -83,7 +93,7 @@ load_examples = False
 ```
 
 
-⚠️ **Important**: Replace `PROJECT_ROOT` with the absolute path to your project directory in all configuration files.
+⚠️ **Important**: Paths already replaces with `PROJECT_ROOT=/home/jovyan/persistent_volume/Sales_Decline_Forecasting`
 
 #### Notes
 - View distribution information
