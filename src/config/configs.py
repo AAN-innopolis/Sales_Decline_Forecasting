@@ -14,10 +14,11 @@ class Settings(BaseSettings):
     Project settings class.
     Used for centralized configuration storage.
     """
+    SOCRATA_API_TOKEN: str = ''
+
     DEVICE: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     NUM_WORKERS: int = 4
 
-    
     # Columns for item details
     ITEM_DETAILS_COLUMNS: List[str] = [
         'category_name', 
