@@ -16,9 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from src.config.configs import settings
 
 BATCH_SIZE: int = 10**5
-INITIAL_SLEEP_TIME: int = 10
+INITIAL_SLEEP_TIME: int = 5
 MIN_SLEEP_TIME: int = 2
-MAX_SLEEP_TIME: int = 20
+MAX_SLEEP_TIME: int = 10
 MAX_RETRY_ATTEMPTS: int = 3
 API_DATASET_ID: str = "m3tr-qhgy"
 API_DOMAIN: str = "data.iowa.gov"
@@ -45,11 +45,16 @@ def get_latest_date_from_last_batch(
         return None, None
         
     try:
-        last_batch = batch_files[-1]
-        df = pd.read_csv(last_batch)
+        last_batch = [int(str(filename).split('_')[-1][:-4]) 
+                      for filename 
+                      in batch_files]
+        last_batch.sort()
+        last_batch = last_batch[-1]
+
+        df = pd.read_csv(raw_data_path / f'batch_{last_batch}.csv')
         latest_date = pd.to_datetime(df['date']).max()
         logger.info(f"Found latest date in last batch: {latest_date}")
-        return latest_date, int(str(last_batch).split("_")[-1].split(".")[0])
+        return latest_date, last_batch
     except Exception as e:
         logger.error(f"Error reading last batch file: {e}")
         return None, None
@@ -75,7 +80,7 @@ def fetch_data_batch(
         "order": "date",
         "offset": offset,
         "limit": BATCH_SIZE,
-        "where": "vendor_name = 'SAZERAC CO., INC.'"
+        "where": "vendor_name LIKE 'SAZERAC%'"
     }
     
     if latest_date:
@@ -103,7 +108,7 @@ def save_data_batch(
     
     if results_df.empty:
         logger.info("No new data to save")
-        return
+        return False
         
     date_range = f"{results_df['date'].min()} - {results_df['date'].max()}"
     logger.info(f'Date range: {date_range}')
@@ -115,8 +120,10 @@ def save_data_batch(
         f"batch_{batch}.csv"
     )
     results_df.loc[results_df['zipcode'] == '712-2', 'zipcode'] = 51529
+    results_df.loc[results_df['zipcode'].isna(), 'zipcode'] = 0
     results_df['zipcode'] = results_df['zipcode'].astype(int)
     results_df.to_csv(output_path, index=False)
+    return True
 
 
 def attempt_data_fetch(
@@ -139,7 +146,8 @@ def attempt_data_fetch(
     global INITIAL_SLEEP_TIME
     
     try:
-        save_data_batch(batch_id, latest_date, last_batch)
+        if not save_data_batch(batch_id, latest_date, last_batch): 
+            return False
         INITIAL_SLEEP_TIME = 10
         sleep_time = randint(MIN_SLEEP_TIME, MAX_SLEEP_TIME)
         time.sleep(sleep_time)
