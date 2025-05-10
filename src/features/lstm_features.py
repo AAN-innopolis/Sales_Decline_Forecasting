@@ -7,6 +7,8 @@ import logging
 import pandas as pd
 import numpy as np
 
+from datetime import timedelta
+from functools import reduce
 
 def create_rolling_features(
         df_original: pd.DataFrame, 
@@ -23,59 +25,90 @@ def create_rolling_features(
         pandas.DataFrame: LSTM (rolling) features
     """
     logger.info("Creating rolling features") 
-    df = df_original[['store','date']].copy()  
+    df = df_original[['store','date']].copy()
+
+    lookup = df_original[['store', 'date', 'purchase_amount']].copy()
+    lookup.rename(columns={'purchase_amount': 'past_purchase'}, inplace=True)
    
     lag_periods = [1, 2, 3, 4]
-    window_sizes = [2, 4, 8, 12, 30, 60, 90]
+    window_sizes = ['2D', '4D', '8D', '12D', '30D', '60D', '90D']
     for period in lag_periods:
-        df[f'prev_{period}_purchase_amount'] = df_original.groupby('store')['purchase_amount'].shift(period)
-        
+        df[f'lag_{period}_date'] = df['date'] - timedelta(days=period)
+
+        df = df.merge(
+            lookup,
+            left_on=['store', f'lag_{period}_date'],
+            right_on=['store', 'date'],
+            how='left'
+        )
+
+        df.rename(columns={'past_purchase': f'prev_{period}_purchase_amount'}, inplace=True)
+        df.drop(columns=['date_y', f'lag_{period}_date'], inplace=True)
+        df.rename(columns={'date_x': 'date'}, inplace=True)
+
+        df[f'prev_{period}_purchase_amount'] = df[f'prev_{period}_purchase_amount'].fillna(0)
+
+    temp = df_original[['store', 'date', 'purchase_amount', 'days_since_prev_purchase']].copy()
+    temp = temp.sort_values(by=['store', 'date'])
+    rolling_feature_dfs = []
     
     for window in window_sizes:
-        rolling_stats = (
-            df_original.groupby('store')['purchase_amount']
-            .rolling(
-                window=window, 
-                min_periods=1,
-                closed='left'
-            ).agg(
-                ['mean', 'std', 'max', 'min', 'median']
-            )
+
+        stats = (
+            temp
+            .set_index('date')
+            .groupby('store')['purchase_amount']
+            .rolling(window=window, min_periods=1, closed='left')
+            .agg(['mean', 'std', 'max', 'min', 'median'])
+            .reset_index()
         )
-        rolling_stats.columns = [
-            f'hist_{stat}_{window}_purchases_amount' 
-            for stat in ['mean', 'std', 'max', 'min', 'median']
-        ]
-        df = df.join(rolling_stats.reset_index(drop=True))
+
+        stats = stats.rename(columns={
+            'mean': f'hist_mean_{window}_purchases_amount',
+            'std': f'hist_std_{window}_purchases_amount',
+            'max': f'hist_max_{window}_purchases_amount',
+            'min': f'hist_min_{window}_purchases_amount',
+            'median': f'hist_median_{window}_purchases_amount',
+        })
+
+        stats = stats.merge(temp[['store', 'date', 'purchase_amount']], on=['store', 'date'], how='left')
+
         # Calculate momentum as difference 
         # between current purchase 
         # and rolling mean of previous 'window' purchases
-        df[f'purchase_momentum_{window}'] = (
-            df_original['purchase_amount'] 
-            - df[f'hist_mean_{window}_purchases_amount']
+        stats[f'purchase_momentum_{window}'] = (
+            stats['purchase_amount'] - stats[f'hist_mean_{window}_purchases_amount']
         )
         # Calculate percentage momentum: 
         # shows relative deviation from historical average
         # Formula: ((current/mean) - 1) * 100
         # -1 centers around 0: if current = mean, result is 0%
-        df[f'purchase_momentum_pct_{window}'] = (
-            (df_original['purchase_amount'] 
-             / df[f'hist_mean_{window}_purchases_amount']
-              .replace(0, np.nan) - 1) * 100
+        stats[f'purchase_momentum_pct_{window}'] = (
+            (stats['purchase_amount'] / stats[f'hist_mean_{window}_purchases_amount'].replace(0, np.nan) - 1) * 100
         )
+
         # Calculate average days between purchases using historical data
-        df[f'hist_avg_days_between_purchases_{window}'] = (
-            df_original.groupby('store')['days_since_prev_purchase']
+        avg_days = (
+            temp
+            .set_index('date')
+            .groupby('store')['days_since_prev_purchase']
             .rolling(window=window, min_periods=1, closed='left')
             .mean()
-            .reset_index(drop=True)
+            .reset_index()
+            .rename(columns={'days_since_prev_purchase': f'hist_avg_days_between_purchases_{window}'})
         )
+
+        stats = stats.merge(avg_days, on=['store', 'date'], how='left')
+        stats.drop(columns=['purchase_amount'], inplace=True)
+
+        rolling_feature_dfs.append(stats)
+
+    all_rolling_features = reduce(lambda left, right: pd.merge(left, right, on=['store', 'date'], how='left'), rolling_feature_dfs)
+    df = df.merge(all_rolling_features, on=['store', 'date'], how='left')
     logger.info(f"Rolling features created.\
                 Shape: {df.shape}, \
                 Columns: {df.columns}")
     return df
-
-
 
 def prepare_lstm_sequences(df: pd.DataFrame, sequence_length: int = 30) -> np.ndarray:
     """

@@ -60,38 +60,58 @@ def get_base_statistics(
     Returns:
         pd.DataFrame: Aggregated dataframe per store and date containing base statistics
     """
+
     df = df_original.copy()
     logger.info("Creating base statistics")
+
+    df['state_bottle_cost_total'] = df['state_bottle_cost'] * df['sale_bottles']
+    df['bottle_volume_ml_total'] = df['bottle_volume_ml'] * df['sale_bottles']
+    df['pack_number'] = np.ceil(df['sale_bottles'] / df['pack'])
+    df['pack_volume'] = df['pack_number'] * df['pack']
     
     statistics = (
         df.groupby(['store', 'date']).agg({
                 'sale_bottles': 'sum',
                 'sale_dollars': 'sum',
                 'sale_liters': 'sum',
-                'state_bottle_cost': 'sum', # state_bottle_cost - amount that ABD paid for each bottle
-                'state_bottle_retail': 'sum', # amount that the store paid for each bottle
-                'pack': 'sum',
-                'bottle_volume_ml': 'sum',
+                'pack_number': 'sum',
+                'state_bottle_cost_total': 'sum', # state_bottle_cost - amount that ABD paid for all bottles
+                'pack_volume': 'sum',
+                'bottle_volume_ml_total': 'sum',
                 'invoice_line_no': 'count',
                 'category': 'nunique',
                 'itemno': 'nunique'
             })
             .reset_index()
-            .rename(columns={
-                'sale_bottles': 'purchased_bottles',
-                'sale_dollars': 'purchase_amount',
-                'sale_liters': 'purchased_liters',
-                'state_bottle_cost': 'total_state_bottle_cost',
-                'state_bottle_retail': 'total_state_bottle_retail',
-                'pack': 'total_packs',
-                'bottle_volume_ml': 'total_bottle_volume',
-                'invoice_line_no': 'transaction_count',
-                'category': 'unique_categories',
-                'itemno': 'unique_items'
-            })
     )
+    # print(statistics.columns)
+
+    statistics['state_bottle_cost_avg'] = (
+         statistics['state_bottle_cost_total'] / statistics['sale_bottles']
+    )
+    statistics['bottle_volume_ml_avg'] = (
+         statistics['bottle_volume_ml_total'] / statistics['sale_bottles']
+    )
+    statistics['pack_avg'] = (
+         statistics['pack_volume'] / statistics['pack_number']
+    )
+
+    statistics.drop(columns=['state_bottle_cost_total', 'pack_volume', 'pack_number',
+                             'bottle_volume_ml_total'], inplace=True)
+            
+    statistics.rename(columns={
+        'sale_bottles': 'purchased_bottles',
+        'sale_dollars': 'purchase_amount',
+        'sale_liters': 'purchased_liters',
+        'state_bottle_cost_avg': 'average_state_bottle_cost',
+        'pack_avg': 'average_pack',
+        'bottle_volume_ml_avg': 'average_bottle_volume',
+        'invoice_line_no': 'transaction_count',
+        'category': 'unique_categories',
+        'itemno': 'unique_items'
+    })
     logger.info(f"Base statistics created.\
-                Shape: {statistics.shape}, \
+                Shape: {statistics.shape},\
                 Columns: {statistics.columns}")
     return statistics
 
@@ -112,8 +132,24 @@ def get_extended_statistics(
     Returns:
         pd.DataFrame: Aggregated dataframe per store and date containing additional statistics
     """
+
+    def safe_mean(arr):
+        return np.mean(arr) if len(arr) > 0 else 0
+
+    def safe_median(arr):
+        return np.median(arr) if len(arr) > 0 else 0
+
+    def expand_by_weight(values, weights):
+        values = np.asarray(values)
+        weights = np.abs(np.asarray(weights)).astype(int)
+        if len(values) != len(weights):
+            return values
+        return np.repeat(values, weights)
+
     df = df_original.copy()
     logger.info("Creating additional statistics")
+
+    df['pack_number'] = np.ceil(df['sale_bottles'] / df['pack'])
 
     statistics = df.groupby(['store', 'date']).agg({
         # Sales - basic metrics and distributions
@@ -121,13 +157,43 @@ def get_extended_statistics(
         'sale_dollars': ['mean', 'median', 'min', 'max'],
         'sale_liters': ['mean', 'median', 'min', 'max'],
         # Statistics on bottle costs
-        'state_bottle_cost': ['mean', 'median', 'min', 'max'],
-        'state_bottle_retail': ['mean', 'median', 'min', 'max'],
+        'sale_bottles': list,
+        'state_bottle_cost': list,
         # Statistics on packs and volumes
-        'pack': ['mean', 'median', 'min', 'max'],
-        'bottle_volume_ml': ['mean', 'median', 'min', 'max']
+        'pack': list,
+        'pack_number': list,
+        'bottle_volume_ml': list
     }).reset_index()
     statistics.columns = ['_'.join(col).strip('_') for col in statistics.columns.values]
+    statistics['expanded_costs'] = statistics.apply(
+		lambda row: expand_by_weight(row['state_bottle_cost_list'], row['sale_bottles_list']),
+		axis=1
+	)
+    statistics['expanded_volumes'] = statistics.apply(
+		lambda row: expand_by_weight(row['bottle_volume_ml_list'], row['sale_bottles_list']),
+		axis=1
+	)
+    statistics['expanded_packs'] = statistics.apply(
+		lambda row: expand_by_weight(row['pack_list'], row['pack_number_list']),
+		axis=1
+	)
+
+    statistics['state_bottle_cost_mean'] = statistics['expanded_costs'].apply(safe_mean)
+    statistics['state_bottle_cost_median'] = statistics['expanded_costs'].apply(safe_median)
+    statistics['bottle_volume_ml_mean'] = statistics['expanded_volumes'].apply(safe_mean)
+    statistics['bottle_volume_ml_median'] = statistics['expanded_volumes'].apply(safe_median)
+    statistics['pack_mean'] = statistics['expanded_packs'].apply(safe_mean)
+    statistics['pack_median'] = statistics['expanded_packs'].apply(safe_median)
+    statistics.drop(columns=['expanded_costs', 'expanded_volumes', 'expanded_packs'], inplace=True)
+
+    statistics['state_bottle_cost_min'] = statistics['state_bottle_cost_list'].apply(min)
+    statistics['pack_min'] = statistics['pack_list'].apply(min)
+    statistics['bottle_volume_ml_min'] = statistics['bottle_volume_ml_list'].apply(min)
+    statistics['state_bottle_cost_max'] = statistics['state_bottle_cost_list'].apply(max)
+    statistics['pack_max'] = statistics['pack_list'].apply(max)
+    statistics['bottle_volume_ml_max'] = statistics['bottle_volume_ml_list'].apply(max)
+    statistics.drop(columns=['state_bottle_cost_list', 'bottle_volume_ml_list',
+                             'pack_list', 'pack_number_list', 'sale_bottles_list'], inplace=True)
     logger.info(f"Extended statistics created.\
                 Shape: {statistics.shape},\
                 Columns: {statistics.columns}")
@@ -164,10 +230,6 @@ def get_derived_features(
     df['avg_items_per_transaction'] = df['unique_items'] / df['transaction_count'].replace(0, np.nan)
     # Average purchase value - important indicator of purchase volume
     df['avg_transaction_value'] = df['purchase_amount'] / df['transaction_count'].replace(0, np.nan)
-    # Purchase margin - shows difference between recommended retail price and purchase price
-    df['profit_margin'] = (df['total_state_bottle_retail'] - df['total_state_bottle_cost']) / df['total_state_bottle_retail'].replace(0, np.nan)
-    # Markup factor - helps analyze purchase conditions and track changes in pricing policy
-    df['discount_factor'] = df['total_state_bottle_retail'] / df['total_state_bottle_cost'].replace(0, np.nan)
 
     df_derived = df[[ 
         'store', 
@@ -176,9 +238,7 @@ def get_derived_features(
         'avg_price_per_bottle', 
         'avg_price_per_liter', 
         'avg_items_per_transaction', 
-        'avg_transaction_value',
-        'profit_margin',
-        'discount_factor'
+        'avg_transaction_value'
     ]]
     logger.info(f"Derived features created.\
                 Shape: {df_derived.shape},\
@@ -249,8 +309,6 @@ def get_item_details(
                 Shape: {item_details.shape},\
                 Columns: {item_details.columns}")
     return item_details
-
-
 
 def get_holiday_features(
         df_original: pd.DataFrame, 
