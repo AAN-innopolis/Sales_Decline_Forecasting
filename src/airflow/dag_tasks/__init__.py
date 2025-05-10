@@ -1,6 +1,6 @@
 """
-Пакет dag_tasks содержит скрипты для выполнения задач в DAG Airflow.
-Эти скрипты предназначены для запуска в качестве отдельных задач в пайплайне обработки данных.
+The dag_tasks package contains scripts for executing tasks in Airflow DAG.
+These scripts are intended to be run as individual tasks in the data processing pipeline.
 """
 
 __all__ = [
