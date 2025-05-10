@@ -35,6 +35,8 @@ def validate_and_clean_data(
             logger.warning(f"Found {len(duplicates)} duplicate transactions")
         df = df.drop_duplicates(subset=['invoice_line_no'])
 
+        df = df[df['sale_bottles'] != 0].reset_index(drop=True)
+
         df['date'] = pd.to_datetime(df['date'])
         df = df.sort_values(['store', 'date'])
     except Exception as e:
@@ -84,22 +86,25 @@ def get_base_statistics(
             })
             .reset_index()
     )
+
+    # if (statistics['sale_bottles'] == 0).any():
+    #     logger.info("Zeros present in sale_bottles.")
     # print(statistics.columns)
 
     statistics['state_bottle_cost_avg'] = (
-         statistics['state_bottle_cost_total'] / statistics['sale_bottles']
-    )
+         statistics['state_bottle_cost_total'] / statistics['sale_bottles'].replace(0, np.nan)
+    ).replace(np.nan, 0)
     statistics['bottle_volume_ml_avg'] = (
-         statistics['bottle_volume_ml_total'] / statistics['sale_bottles']
-    )
+         statistics['bottle_volume_ml_total'] / statistics['sale_bottles'].replace(0, np.nan)
+    ).replace(np.nan, 0)
     statistics['pack_avg'] = (
-         statistics['pack_volume'] / statistics['pack_number']
-    )
+         statistics['pack_volume'] / statistics['pack_number'].replace(0, np.nan)
+    ).replace(np.nan, 0)
 
-    statistics.drop(columns=['state_bottle_cost_total', 'pack_volume', 'pack_number',
-                             'bottle_volume_ml_total'], inplace=True)
+    statistics = statistics.drop(columns=['state_bottle_cost_total', 'pack_volume', 'pack_number',
+                             'bottle_volume_ml_total'])
             
-    statistics.rename(columns={
+    statistics = statistics.rename(columns={
         'sale_bottles': 'purchased_bottles',
         'sale_dollars': 'purchase_amount',
         'sale_liters': 'purchased_liters',
@@ -110,9 +115,9 @@ def get_base_statistics(
         'category': 'unique_categories',
         'itemno': 'unique_items'
     })
-    logger.info(f"Base statistics created.\
-                Shape: {statistics.shape},\
-                Columns: {statistics.columns}")
+    logger.info(f"Base statistics created.\n\
+                \rShape: {statistics.shape},\n\
+                \rColumns: {statistics.columns}")
     return statistics
 
 

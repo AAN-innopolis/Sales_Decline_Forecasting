@@ -55,15 +55,15 @@ def construct_lstm_datasets(
         'quarter_sin', 'quarter_cos',
         
         # Rolling statistics
-        'hist_mean_30_purchases_amount',
-        'hist_std_30_purchases_amount',
-        'hist_max_30_purchases_amount',
-        'hist_min_30_purchases_amount',
-        'hist_median_30_purchases_amount',
+        f'hist_mean_{sequence_length}D_purchases_amount',
+        f'hist_std_{sequence_length}D_purchases_amount',
+        f'hist_max_{sequence_length}D_purchases_amount',
+        f'hist_min_{sequence_length}D_purchases_amount',
+        f'hist_median_{sequence_length}D_purchases_amount',
         
         # Momentum features
-        'purchase_momentum_30',
-        'purchase_momentum_pct_30',
+        f'purchase_momentum_{sequence_length}D',
+        f'purchase_momentum_pct_{sequence_length}D',
         
         # Store embeddings
         'store_emb_0', 'store_emb_1',

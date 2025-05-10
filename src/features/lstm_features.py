@@ -30,11 +30,12 @@ def create_rolling_features(
     lookup = df_original[['store', 'date', 'purchase_amount']].copy()
     lookup.rename(columns={'purchase_amount': 'past_purchase'}, inplace=True)
    
-    lag_periods = [1, 2, 3, 4]
+    lag_periods = [1, 2, 3, 4, 5, 6, 7, 8]
     window_sizes = ['2D', '4D', '8D', '12D', '30D', '60D', '90D']
     for period in lag_periods:
         df[f'lag_{period}_date'] = df['date'] - timedelta(days=period)
-
+        
+        
         df = df.merge(
             lookup,
             left_on=['store', f'lag_{period}_date'],
