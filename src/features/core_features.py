@@ -15,7 +15,9 @@ from src.config.configs import settings
 
 def validate_and_clean_data(
         df_original: pd.DataFrame, 
-        logger: logging.Logger
+        logger: logging.Logger,
+        min_stores_count: int = 5,
+        max_days_between_purchases: int = 200 # max = 1813
     ) -> pd.DataFrame:
     """
     Validate and clean input data.
@@ -29,16 +31,38 @@ def validate_and_clean_data(
     """ 
     logger.info("Validating input data")
     df = df_original.copy()
+    logger.info(f"Initial shape: {df.shape}")
     try:
         duplicates = df[df['invoice_line_no'].duplicated()]
         if len(duplicates) > 0:
             logger.warning(f"Found {len(duplicates)} duplicate transactions")
         df = df.drop_duplicates(subset=['invoice_line_no'])
+        logger.info(f"After dropping duplicates: {df.shape}")
 
         df = df[df['sale_bottles'] != 0].reset_index(drop=True)
 
         df['date'] = pd.to_datetime(df['date'])
+        logger.info(f"Start date: {df['date'].min()}, End date: {df['date'].max()}")
         df = df.sort_values(['store', 'date'])
+
+        store_counts = df.groupby(['store']).size().sort_values(ascending=False)
+        rare_stores_by_count = list(store_counts[store_counts<=min_stores_count].index)
+        logger.info(f"Filtered out {len(rare_stores_by_count)} stores with less than {min_stores_count} transactions: {rare_stores_by_count}")
+
+        df['diff'] = (
+            df.drop_duplicates(subset=['store', 'date'])
+            .groupby('store')['date']
+            .diff()
+            .dt.days
+            .replace(np.nan, -1)
+        )
+        diff_counts = df['diff'].value_counts()
+        rare_diffs = diff_counts[diff_counts.index > max_days_between_purchases].index.values
+        rare_stores_by_diff = list(df[df['diff'].isin(rare_diffs)]['store'].unique())
+        logger.info(f"Filtered out {len(rare_stores_by_diff)} stores with more than {max_days_between_purchases} days between transactions: {rare_stores_by_diff}")
+        df = df[~df['store'].isin(rare_stores_by_diff + rare_stores_by_count)]
+        logger.info(f"After filtering: {df.shape}")
+
     except Exception as e:
         raise Exception(f"Error while validating data: {e}")
     
@@ -277,9 +301,9 @@ def get_store_attributes(
         'county': lambda x: x.mode()[0]
     }).reset_index()
     
-    store_locations = store_attributes['store_location'].apply(eval)
-    store_attributes['lon'] = store_locations.apply(lambda x: x['coordinates'][0])
-    store_attributes['lat'] = store_locations.apply(lambda x: x['coordinates'][1])
+    store_locations = store_attributes['store_location'].apply(lambda x: eval(x) if pd.notna(x) else None)
+    store_attributes['lon'] = store_locations.apply(lambda x: x['coordinates'][0] if pd.notna(x) else None)
+    store_attributes['lat'] = store_locations.apply(lambda x: x['coordinates'][1] if pd.notna(x) else None)
     
     logger.info(f"Store attributes created.\
                 Shape: {store_attributes.shape},\

@@ -28,19 +28,25 @@ if __name__ == "__main__":
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], 
                         default='INFO',
                         help='The logging level')
+    parser.add_argument('--min-stores-count', type=int, default=5,
+                        help='The minimum number of transactions for a store to be included')
+    parser.add_argument('--max-days-between-purchases', type=int, default=200,
+                        help='The maximum number of days between purchases for a store to be included')
     args = parser.parse_args()
     logger = setup_logger(name=__name__, level=args.log_level)
     
     try:
         df = pd.read_parquet(Path(settings.PROJECT_ROOT, args.input_file))
-        # Sort by count of records per store-date combination
-        store_date_counts = df.groupby(['store']).size().reset_index(name='count')
-        df = df.merge(store_date_counts, on=['store']).sort_values('count', ascending=False).drop(columns=['count'])#.iloc[:100000]
         logger.info(f"Data loaded. Shape: {df.shape}")
     except Exception as e:
         raise Exception(f"Error while loading data: {e}")
     
-    df_cleaned = validate_and_clean_data(df, logger)
+    df_cleaned = validate_and_clean_data(
+        df, 
+        logger, 
+        min_stores_count=args.min_stores_count, 
+        max_days_between_purchases=args.max_days_between_purchases
+    )
     
     try:
         output_dir = Path(settings.PROJECT_ROOT, args.output_file).parent
