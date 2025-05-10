@@ -19,7 +19,7 @@ if __name__ == "__main__":
     The main function for cleaning and validating data
     """
     parser = argparse.ArgumentParser(description='The pipeline for data cleaning before feature engineering')
-    parser.add_argument('--input-file', type=str, default='data/raw/sazerac_df.csv',
+    parser.add_argument('--input-file', type=str, default='data/raw/combined_data.parquet',
                         help='The path to the source data file')
     parser.add_argument('--output-file', type=str, default='data/prepared/cleaned_data.parquet',
                         help='The path to save the cleaned data')
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     logger = setup_logger(name=__name__, level=args.log_level)
     
     try:
-        df = pd.read_csv(Path(settings.PROJECT_ROOT, args.input_file))
+        df = pd.read_parquet(Path(settings.PROJECT_ROOT, args.input_file))
         # Sort by count of records per store-date combination
         store_date_counts = df.groupby(['store']).size().reset_index(name='count')
         df = df.merge(store_date_counts, on=['store']).sort_values('count', ascending=False).drop(columns=['count'])#.iloc[:100000]

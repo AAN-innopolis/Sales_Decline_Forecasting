@@ -1,5 +1,5 @@
 """
-Основные настройки проекта.
+Main project settings.
 """
 
 from pydantic_settings import BaseSettings
@@ -11,14 +11,15 @@ import torch
 
 class Settings(BaseSettings):
     """
-    Класс настроек проекта.
-    Используется для централизованного хранения конфигураций.
+    Project settings class.
+    Used for centralized configuration storage.
     """
+    SOCRATA_API_TOKEN: str = ''
+
     DEVICE: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     NUM_WORKERS: int = 4
 
-    
-    # Колонки для деталей товаров
+    # Columns for item details
     ITEM_DETAILS_COLUMNS: List[str] = [
         'category_name', 
         'im_desc', 

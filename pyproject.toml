@@ -33,5 +33,6 @@ dependencies = [
     "asyncpg>=0.30.0",
     "celery>=5.5.2",
     "flask-appbuilder>=4.6.3",
+    "sodapy>=2.2.0",
 ]
  
