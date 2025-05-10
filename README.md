@@ -73,11 +73,33 @@ Sales Decline Forecasting is a comprehensive system for analyzing and predicting
 5. **Launch the interactive interface:**
    - Start the Streamlit app to interact with the system and visualize forecasts.
 
+## About the Dataset
+
+- **Source:** Iowa Department of Revenue, Alcoholic Beverages Division (Commerce)
+- **License:** Creative Commons Zero (CC0)
+- **Coverage:**
+  - **Location:** Iowa, USA
+  - **Start Date:** 2012-01-01
+  - **Updates:** Data is updated monthly, typically available on the first day of each month.
+  - **Rows:** 31.6 million+ (as of May 2025)
+  - **Columns:** 24
+  - **Each row:** Represents an individual product purchase at the store level (Class E liquor license: grocery stores, liquor stores, convenience stores, etc. — off-premises consumption).
+- **Topics:** Sales & Distribution (liquor sales, spirit sales, store sales, liquor licensees)
+
 ## Data Description
 
-The dataset should include, at minimum, the following columns:
+The dataset should include, at minimum, the following columns (see the [official data portal](https://data.iowa.gov/) for full details):
 
-- `county`: County where the store is located
+- `invoice_line_no`: Unique identifier for the individual liquor product in the store order
+- `date`: Date of order
+- `store`: Unique number assigned to the store
+- `name`: Name of the store
+- `address`: Address of the store
+- `city`: City where the store is located
+- `zipcode`: Zip code of the store
+- `store_location`: Geographical location (point)
+- `county_number`: Iowa county number
+- `county`: County name
 - `category`: Category code of the liquor ordered
 - `category_name`: Category name of the liquor
 - `vendor_no`: Vendor number
@@ -90,6 +112,10 @@ The dataset should include, at minimum, the following columns:
 - `state_bottle_retail`: Retail price per bottle
 - `sale_bottles`: Number of bottles sold
 - `sale_dollars`: Total sales amount
+- `sale_liters`: Total volume sold (liters)
+- `sale_gallons`: Total volume sold (gallons)
+
+> **Note:** For best results, ensure your data is as complete as possible and matches the above schema. The system is designed to handle large-scale, real-world retail sales data.
 
 ## Contributing
 
