@@ -74,11 +74,12 @@ def fetch_data_batch(
     query_params = {
         "order": "date",
         "offset": offset,
-        "limit": BATCH_SIZE
+        "limit": BATCH_SIZE,
+        "where": "vendor_name = 'SAZERAC CO., INC.'"
     }
     
     if latest_date:
-        query_params["where"] = f"date > '{latest_date.strftime('%Y-%m-%d')}'"
+        query_params["where"] += f"AND date > '{latest_date.strftime('%Y-%m-%d')}'"
     
     results = client.get(API_DATASET_ID, **query_params)
     return pd.DataFrame.from_records(results)

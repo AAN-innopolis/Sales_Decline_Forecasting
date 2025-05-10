@@ -98,22 +98,17 @@ The dataset should include, at minimum, the following columns (see the [official
 - `city`: City where the store is located
 - `zipcode`: Zip code of the store
 - `store_location`: Geographical location (point)
-- `county_number`: Iowa county number
 - `county`: County name
 - `category`: Category code of the liquor ordered
 - `category_name`: Category name of the liquor
-- `vendor_no`: Vendor number
-- `vendor_name`: Vendor name
 - `itemno`: Item number
 - `im_desc`: Item description
 - `pack`: Number of bottles in a case
 - `bottle_volume_ml`: Volume of each bottle (ml)
 - `state_bottle_cost`: Cost per bottle (wholesale)
-- `state_bottle_retail`: Retail price per bottle
 - `sale_bottles`: Number of bottles sold
 - `sale_dollars`: Total sales amount
 - `sale_liters`: Total volume sold (liters)
-- `sale_gallons`: Total volume sold (gallons)
 
 > **Note:** For best results, ensure your data is as complete as possible and matches the above schema. The system is designed to handle large-scale, real-world retail sales data.
 
