@@ -64,9 +64,9 @@ def get_store_attributes(
         ] = store_locations.apply(lambda x: x['coordinates'][1])
     store_attributes.drop(columns=['store_location'], inplace=True)
 
-    logger.info(f"Store attributes created.\
-                Shape: {store_attributes.shape},\
-                Columns: {store_attributes.columns}")
+    logger.info(f"Store attributes created.\n\
+                \rShape: {store_attributes.shape},\n\
+                \rColumns: \n{store_attributes.columns}")
     return store_attributes
 
 def get_holiday_features(
@@ -130,9 +130,9 @@ def get_holiday_features(
         holiday_features['days_to_nearest_holiday'] = days_diff
         holiday_features = holiday_features.reset_index()
         
-        logger.info(f"Holiday features created.\
-                    Shape: {holiday_features.shape},\
-                    Columns: {holiday_features.columns}")
+        logger.info(f"Holiday features created.\n\
+                    \rShape: {holiday_features.shape},\n\
+                    \rColumns: \n{holiday_features.columns}")
         return holiday_features
     except Exception as e:
         raise Exception(f"Error while creating holiday features: {e}")
@@ -211,7 +211,7 @@ def get_cyclical_features(
             'week_of_year_cos',
             'year',
         ]]
-    logger.info(f"Cyclical features created.\
-                Shape: {df.shape},\
-                Columns: {df.columns}")
+    logger.info(f"Cyclical features created.\n\
+                \rShape: {df.shape},\n\
+                \rColumns: \n{df.columns}")
     return df

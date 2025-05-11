@@ -63,9 +63,9 @@ def get_derived_features(
         'avg_items_per_transaction', 
         'avg_transaction_value'
     ]]
-    logger.info(f"Derived features created.\
-                Shape: {df_derived.shape},\
-                Columns: {df_derived.columns}")
+    logger.info(f"Derived features created.\n\
+                \rShape: {df_derived.shape},\n\
+                \rColumns: \n{df_derived.columns}")
     return df_derived
 
 def get_store_features(
@@ -169,7 +169,7 @@ def get_store_features(
         store_dfs.append(store_df.set_index('store', append=True))
         
     store_dfs = pd.concat(store_dfs).reset_index()
-    logger.info(f"Store features created. \
-                Shape: {store_dfs.shape}, \
-                Columns: {store_dfs.columns}")
+    logger.info(f"Store features created. \n\
+                \rShape: {store_dfs.shape}, \n\
+                \rColumns: \n{store_dfs.columns}")
     return store_dfs

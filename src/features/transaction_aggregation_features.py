@@ -155,10 +155,6 @@ def get_base_statistics(
             .reset_index()
     )
 
-    # if (statistics['sale_bottles'] == 0).any():
-    #     logger.info("Zeros present in sale_bottles.")
-    # print(statistics.columns)
-
     statistics['state_bottle_cost_avg'] = (
          statistics['state_bottle_cost_total'] / statistics['sale_bottles'].replace(0, np.nan)
     ).replace(np.nan, 0)
@@ -185,7 +181,7 @@ def get_base_statistics(
     })
     logger.info(f"Base statistics created.\n\
                 \rShape: {statistics.shape},\n\
-                \rColumns: {statistics.columns}")
+                \rColumns: \n{statistics.columns}")
     return statistics
 
 def get_extended_statistics(
@@ -207,71 +203,79 @@ def get_extended_statistics(
         pd.DataFrame: Detailed aggregated statistics per store and date
     """
 
-    def safe_mean(arr):
-        return np.mean(arr) if len(arr) > 0 else 0
-
-    def safe_median(arr):
-        return np.median(arr) if len(arr) > 0 else 0
-
-    def expand_by_weight(values, weights):
-        values = np.asarray(values)
-        weights = np.abs(np.asarray(weights)).astype(int)
-        if len(values) != len(weights):
-            return values
-        return np.repeat(values, weights)
+    def weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
+        """Vectorized O(n log n) weighted median."""
+        sorter = np.argsort(values)
+        v_sorted = values[sorter]
+        w_sorted = weights[sorter]
+        cum_w = w_sorted.cumsum()
+        cut = w_sorted.sum() / 2
+        return v_sorted[cum_w >= cut][0]
 
     df = df_original.copy()
     logger.info("Creating additional statistics")
 
-    df['pack_number'] = np.ceil(df['sale_bottles'] / df['pack'])
+    # number of packs actually delivered
+    df['pack_number'] = (np.ceil(df['sale_bottles'] / df['pack'].replace(0, np.nan))).replace(np.nan, 0)
 
-    statistics = df.groupby(['store', 'date']).agg({
-        # Sales - basic metrics and distributions
-        'sale_bottles': ['mean', 'median', 'min', 'max'],
-        'sale_dollars': ['mean', 'median', 'min', 'max'],
-        'sale_liters': ['mean', 'median', 'min', 'max'],
-        # Statistics on bottle costs
-        'sale_bottles': list,
-        'state_bottle_cost': list,
-        # Statistics on packs and volumes
-        'pack': list,
-        'pack_number': list,
-        'bottle_volume_ml': list
-    }).reset_index()
-    statistics.columns = ['_'.join(col).strip('_') for col in statistics.columns.values]
-    statistics['expanded_costs'] = statistics.apply(
-		lambda row: expand_by_weight(row['state_bottle_cost_list'], row['sale_bottles_list']),
-		axis=1
-	)
-    statistics['expanded_volumes'] = statistics.apply(
-		lambda row: expand_by_weight(row['bottle_volume_ml_list'], row['sale_bottles_list']),
-		axis=1
-	)
-    statistics['expanded_packs'] = statistics.apply(
-		lambda row: expand_by_weight(row['pack_list'], row['pack_number_list']),
-		axis=1
-	)
+    # pre-multiply one time
+    df['cost_full'] = df['state_bottle_cost'] * df['sale_bottles']
+    df['vol_full'] = df['bottle_volume_ml'] * df['sale_bottles']
+    df['pack_full'] = df['pack'] * df['pack_number']
 
-    statistics['state_bottle_cost_mean'] = statistics['expanded_costs'].apply(safe_mean)
-    statistics['state_bottle_cost_median'] = statistics['expanded_costs'].apply(safe_median)
-    statistics['bottle_volume_ml_mean'] = statistics['expanded_volumes'].apply(safe_mean)
-    statistics['bottle_volume_ml_median'] = statistics['expanded_volumes'].apply(safe_median)
-    statistics['pack_mean'] = statistics['expanded_packs'].apply(safe_mean)
-    statistics['pack_median'] = statistics['expanded_packs'].apply(safe_median)
-    statistics.drop(columns=['expanded_costs', 'expanded_volumes', 'expanded_packs'], inplace=True)
+    grp_cols = ['store', 'date']
+    g = df.groupby(grp_cols, sort=False)
 
-    statistics['state_bottle_cost_min'] = statistics['state_bottle_cost_list'].apply(min)
-    statistics['pack_min'] = statistics['pack_list'].apply(min)
-    statistics['bottle_volume_ml_min'] = statistics['bottle_volume_ml_list'].apply(min)
-    statistics['state_bottle_cost_max'] = statistics['state_bottle_cost_list'].apply(max)
-    statistics['pack_max'] = statistics['pack_list'].apply(max)
-    statistics['bottle_volume_ml_max'] = statistics['bottle_volume_ml_list'].apply(max)
-    statistics.drop(columns=['state_bottle_cost_list', 'bottle_volume_ml_list',
-                             'pack_list', 'pack_number_list', 'sale_bottles_list'], inplace=True)
-    logger.info(f"Extended statistics created.\
-                Shape: {statistics.shape},\
-                Columns: {statistics.columns}")
-    return statistics
+    basic = g.agg({
+        'sale_bottles'     : ['mean', 'median', 'min', 'max', 'sum'],
+        'sale_dollars'     : ['mean', 'median', 'min', 'max'],
+        'sale_liters'      : ['mean', 'median', 'min', 'max'],
+        'state_bottle_cost': ['min', 'max'],
+        'bottle_volume_ml' : ['min', 'max'],
+        'pack'             : ['min', 'max'],
+        'pack_number'      : ['sum']
+    })
+
+    basic.columns = [
+        f"{col}_{func}" if func else col
+        for col, func in basic.columns.to_flat_index()
+    ]
+
+    totals = g.agg(
+        cost_total = ('cost_full', 'sum'),
+        vol_total  = ('vol_full',  'sum'),
+        pack_total = ('pack_full', 'sum')
+    )
+
+    means = pd.DataFrame({
+        'state_bottle_cost_mean': (totals['cost_total'] / basic['sale_bottles_sum'].replace(0, np.nan)).replace(np.nan, 0),
+        'bottle_volume_ml_mean': (totals['vol_total']  / basic['sale_bottles_sum'].replace(0, np.nan)).replace(np.nan, 0),
+        'pack_mean': (totals['pack_total'] / basic['pack_number_sum'].replace(0, np.nan)).replace(np.nan, 0)
+    })
+
+    def _medians(sub: pd.DataFrame) -> pd.Series:
+        sb = sub['sale_bottles'].abs().to_numpy() # weights for cost & volume
+        pn = sub['pack_number'].abs().to_numpy() # weights for pack
+        return pd.Series({
+            'state_bottle_cost_median': weighted_median(sub['state_bottle_cost'].to_numpy(), sb),
+            'bottle_volume_ml_median': weighted_median(sub['bottle_volume_ml'].to_numpy(), sb),
+            'pack_median': weighted_median(sub['pack'].to_numpy(), pn)
+        })
+    
+    medians = g.apply(_medians, include_groups=False)
+
+    stats = (
+        basic
+        .drop(columns=['sale_bottles_sum', 'pack_number_sum'])
+        .join(means)
+        .join(medians)
+        .reset_index()
+        .astype({'store': df['store'].dtype})
+    )
+    logger.info(f"Extended statistics created.\n\
+                \rShape: {stats.shape},\n\
+                \rColumns: \n{stats.columns}")
+    return stats
 
 def get_item_details(
         df_original: pd.DataFrame, 
@@ -298,7 +302,7 @@ def get_item_details(
         .drop_duplicates()
         .to_dict('records'), include_groups=False
     ).reset_index(name='item_details')
-    logger.info(f"Item details created.\
-                Shape: {item_details.shape},\
-                Columns: {item_details.columns}")
+    logger.info(f"Item details created.\n\
+                \rShape: {item_details.shape},\n\
+                \rColumns: \n{item_details.columns}")
     return item_details

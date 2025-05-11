@@ -108,9 +108,9 @@ def encode_tft_data(
     tft_params = tft_encoder.create_tft_dataset_parameters()
     
     logger.info(f"Encoding completed. \n\
-                \bDataFrame shape: {df_encoded.shape}\n\
-                \bTFT parameters: {tft_params}\n\
-                \bColumns: {df_encoded.columns}")
+                \rDataFrame shape: {df_encoded.shape}\n\
+                \rTFT parameters: {tft_params}\n\
+                \rColumns: {df_encoded.columns}")
     return df_encoded, tft_params
 
 
