@@ -103,6 +103,7 @@ def validate_and_clean_data(
         diff_counts = df['diff'].value_counts()
         rare_diffs = diff_counts[diff_counts.index > max_days_between_purchases].index.values
         rare_stores_by_diff = list(df[df['diff'].isin(rare_diffs)]['store'].unique())
+        df = df.drop(columns=['diff'])
         logger.info(f"Filtered out {len(rare_stores_by_diff)} stores with more than {max_days_between_purchases} days between transactions: {rare_stores_by_diff}")
         df = df[~df['store'].isin(rare_stores_by_diff + rare_stores_by_count)]
         logger.info(f"After filtering: {df.shape[0]} rows")

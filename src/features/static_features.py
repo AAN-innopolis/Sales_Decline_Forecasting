@@ -52,7 +52,7 @@ def get_store_attributes(
     }).reset_index()
     
     # Extract longitude and latitude from store_location
-    store_attributes['lon'], store_attributes['lat'] = 0, 0
+    store_attributes['lon'], store_attributes['lat'] = 0.0, 0.0
     store_locations = store_attributes.loc[
         store_attributes['store_location'] != 'Unknown', 
         'store_location'].apply(eval)
