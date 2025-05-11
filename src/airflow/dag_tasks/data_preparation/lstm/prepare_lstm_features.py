@@ -10,11 +10,15 @@ import sys
 import logging
 import os
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
-from src.utils import setup_logger
-from src.features.lstm_features import create_rolling_features
+from src.utils.data_utils import setup_logger
+from src.features.temporal_features import (
+    get_rolling_features,
+    get_lag_features
+)
 from src.config.configs import settings
+
 
 def prepare_lstm_data(
         df_original: pd.DataFrame, 
@@ -33,11 +37,17 @@ def prepare_lstm_data(
     df = df_original.copy().sort_values(by=['store', 'date'])
     logger.info("Starting preparation of features for LSTM model")
     
-    df_lstm = create_rolling_features(df, logger) 
+    df_lag = get_lag_features(df, logger) 
+    df_rolling = get_rolling_features(df, logger)
     df_res = df.merge(
-        df_lstm, 
+        df_lag, 
         on=['store', 'date'], 
-        how='left')
+        how='left'
+    ).merge(
+        df_rolling, 
+        on=['store', 'date'], 
+        how='left'
+    )
     logger.info(f"Final data shape: {df_res.shape}")
     return df_res
 

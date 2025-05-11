@@ -10,10 +10,10 @@ import sys
 import logging
 import os
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
-from src.utils import setup_logger
-from src.features.tft_feature_encoder import TFTFeatureEncoder
+from src.utils.data_utils import setup_logger
+from src.utils.data_utils.tft_feature_encoder import TFTFeatureEncoder
 from src.config.configs import settings
 
 
@@ -108,9 +108,9 @@ def encode_tft_data(
     tft_params = tft_encoder.create_tft_dataset_parameters()
     
     logger.info(f"Encoding completed. \n\
-                \bDataFrame shape: {df_encoded.shape}\n\
-                \bTFT parameters: {tft_params}\n\
-                \bColumns: {df_encoded.columns}")
+                \rDataFrame shape: {df_encoded.shape}\n\
+                \rTFT parameters: {tft_params}\n\
+                \rColumns: {df_encoded.columns}")
     return df_encoded, tft_params
 
 

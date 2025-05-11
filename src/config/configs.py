@@ -1,5 +1,5 @@
 """
-Основные настройки проекта.
+Main project settings.
 """
 
 from pydantic_settings import BaseSettings
@@ -11,14 +11,55 @@ import torch
 
 class Settings(BaseSettings):
     """
-    Класс настроек проекта.
-    Используется для централизованного хранения конфигураций.
+    Project settings class.
+    Used for centralized configuration storage.
     """
+    SOCRATA_API_TOKEN: str = ''
+
     DEVICE: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     NUM_WORKERS: int = 4
 
-    
-    # Колонки для деталей товаров
+    PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
+
+    ### BUSINESS RULES
+    PRIMARY_KEYS: List[str] = [
+        'invoice_line_no',
+    ]
+    NOTNA_COLUMNS: List[str] = [
+        'invoice_line_no',
+        'store',
+        'name',
+        'date', 
+        'pack',
+        'bottle_volume_ml',
+        'state_bottle_cost',
+        'sale_bottles',
+        'sale_dollars',
+        'sale_liters'
+    ]
+    NONZERO_COLUMNS: List[str] = [
+        'sale_bottles',
+        'sale_bottles',
+        'sale_liters',
+        'bottle_volume_ml',
+        'state_bottle_cost',
+        'pack',
+    ]
+    INDEXED_COLUMNS: List[str] = [
+        'category', 
+        'itemno', 
+        'zipcode',
+    ]
+    CATEGORICAL_COLUMNS: List[str] = [
+        'category_name',
+        'address',
+        'city',
+        'county', 
+        'im_desc',
+        'store_location',
+    ]
+
+    ### LLM FEATURE
     ITEM_DETAILS_COLUMNS: List[str] = [
         'category_name', 
         'im_desc', 
@@ -31,7 +72,13 @@ class Settings(BaseSettings):
         'sale_liters',
     ]
 
-    PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
+    ### LAGS AND ROLLING FEATURES
+    LAG_PERIODS: List[int] = [
+        7, 14, 21
+    ]
+    ROLLING_WINDOW_SIZES: List[str] = [
+        '7D', '14D', '21D', '30D', '60D', '90D'
+    ]
 
     class Config:
         env_file = ".env"

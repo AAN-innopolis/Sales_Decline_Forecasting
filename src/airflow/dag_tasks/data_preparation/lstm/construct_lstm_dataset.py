@@ -11,9 +11,9 @@ import logging
 import os
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
-from src.utils import setup_logger
+from src.utils.data_utils import setup_logger
 from src.features.lstm_dataset import create_lstm_datasets
 from src.config.configs import settings
 
@@ -28,7 +28,8 @@ def construct_lstm_datasets(
     val_ratio: float = 0.15,
     test_ratio: float = 0.15,
     batch_size: int = 32,
-    min_store_history: int = 90
+    min_store_history: int = 90,
+    embedding_size: int = 16
 ) -> None:
     """
     Construct and save LSTM datasets.
@@ -55,19 +56,18 @@ def construct_lstm_datasets(
         'quarter_sin', 'quarter_cos',
         
         # Rolling statistics
-        'hist_mean_30_purchases_amount',
-        'hist_std_30_purchases_amount',
-        'hist_max_30_purchases_amount',
-        'hist_min_30_purchases_amount',
-        'hist_median_30_purchases_amount',
+        f'hist_mean_{sequence_length}D_purchases_amount',
+        f'hist_std_{sequence_length}D_purchases_amount',
+        f'hist_max_{sequence_length}D_purchases_amount',
+        f'hist_min_{sequence_length}D_purchases_amount',
+        f'hist_median_{sequence_length}D_purchases_amount',
         
         # Momentum features
-        'purchase_momentum_30',
-        'purchase_momentum_pct_30',
-        
+        f'purchase_momentum_{sequence_length}D',
+        f'purchase_momentum_pct_{sequence_length}D',
+
         # Store embeddings
-        'store_emb_0', 'store_emb_1',
-        'store_emb_2', 'store_emb_3'
+        *[f'store_emb_{emb}' for emb in range(embedding_size)]
     ]
     
     train_loader, val_loader, test_loader = create_lstm_datasets(
@@ -105,9 +105,9 @@ if __name__ == "__main__":
                         help='The logging level')
     parser.add_argument('--input-file', type=str, default='data/prepared/lstm_features_with_embeddings.parquet',
                         help='Path to the input file with LSTM features')
-    parser.add_argument('--sequence-length', type=int, default=1,
+    parser.add_argument('--sequence-length', type=int, default=30,
                         help='Length of input sequences')
-    parser.add_argument('--prediction-length', type=int, default=1,
+    parser.add_argument('--prediction-length', type=int, default=30,
                         help='Length of prediction horizon')
     parser.add_argument('--target-col', type=str, default='purchase_amount',
                         help='Target column name')
@@ -117,7 +117,7 @@ if __name__ == "__main__":
                         help='Ratio of data for validation')
     parser.add_argument('--test-ratio', type=float, default=0.15,
                         help='Ratio of data for testing')
-    parser.add_argument('--batch-size', type=int, default=5,
+    parser.add_argument('--batch-size', type=int, default=32,
                         help='Batch size for DataLoader')
     parser.add_argument('--min-store-history', type=int, default=90,
                         help='Minimum number of historical points required for a store')

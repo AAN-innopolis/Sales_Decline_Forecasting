@@ -11,10 +11,10 @@ import logging
 import os
 import json
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
-from src.utils import setup_logger
-from src.features.core_features import (
+from src.utils.data_utils import setup_logger
+from features.static_features import (
     get_item_details,
     get_holiday_features,
     get_store_attributes,

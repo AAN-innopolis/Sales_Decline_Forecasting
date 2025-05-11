@@ -75,6 +75,26 @@ class FeatureScaler:
             
         return columns_to_scale
     
+    def check_validity(self, df: pd.DataFrame, columns: list) -> bool:
+        """
+        Checks that the selected columns are valid for the rescaling.
+
+        Args:
+            df: Input DataFrame
+            columns: Columns to be scaled
+
+        Returns:
+            True if columns can be safely scaled.
+            False otherwise.
+        """
+        for col in columns:
+            if np.isinf(df[col]).any():
+                self.logger.error(f"Infinite value found in column {col}.")
+                return False
+        self.logger.info("No infinite values found.")
+        return True
+
+    
     def fit(self, df: pd.DataFrame) -> 'FeatureScaler':
         """
         Fit the scaler on the input DataFrame.
@@ -92,9 +112,13 @@ class FeatureScaler:
                 self.logger.warning("No numerical features to scale")
             return self
         
-        # Fit StandardScaler on selected columns
-        self.scaler.fit(df[self.columns_to_scale])
-        self.fitted = True
+        # Check validity of scaling operation on selected columns
+        if self.check_validity(df, self.columns_to_scale):
+            # Fit StandardScaler on selected columns
+            self.scaler.fit(df[self.columns_to_scale])
+            self.fitted = True
+        else:
+            raise ValueError("Infinite value found in the dataset, stopping scaling.")
         
         if self.logger:
             self.logger.info("Scaler fitted successfully")
