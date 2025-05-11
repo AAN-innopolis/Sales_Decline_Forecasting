@@ -122,6 +122,7 @@ def construct_tft_datasets(
                 \r{store_counts[store_counts < min_history_length].shape[0]} stores. \n\
                 \rRemaining stores: {len(valid_stores)}")
 
+    df['purchase_amount'] = df['purchase_amount'].clip(lower=0)
     train_df, val_df = split_data_by_store(
         df[df['store'].isin(valid_stores)].copy(), 
         split_ratio, 
@@ -150,10 +151,10 @@ def construct_tft_datasets(
         time_varying_known_categoricals=feature_categories['time_varying_known_categoricals'],
         time_varying_known_reals=feature_categories['time_varying_known_reals'],
         time_varying_unknown_reals=feature_categories['time_varying_unknown_reals'],
-        # target_normalizer=GroupNormalizer(
-        #     groups=["store"], 
-        #     transformation="softplus"
-        # ),
+        target_normalizer=GroupNormalizer(
+            groups=["store"], 
+            transformation="softplus"
+        ),
         categorical_encoders=categorical_encoders_dict,
         randomize_length=True,
         add_relative_time_idx=True,
