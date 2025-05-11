@@ -33,14 +33,45 @@ def validate_and_clean_data(
     df = df_original.copy()
     logger.info(f"Initial shape: {df.shape}")
     try:
-        duplicates = df[df['invoice_line_no'].duplicated()]
+        #### Dropping rows with missing values
+        notna_cols = settings.NOTNA_COLUMNS
+        logger.info(f"Checking columns for appearance of missing values: {notna_cols}")
+        for col in notna_cols:
+            if df[col].isna().any():
+                logger.info(f"{col}: missing values: {df[df[col].isna()].shape[0]} rows. Dropping rows with missing values...")
+                df = df.dropna(subset=[col])
+                logger.info(f"After dropping: {df.shape[0]} rows")
+
+        #### Dropping duplicates by invoice_line_no
+        logger.info(f"Checking duplicates by {settings.PRIMARY_KEYS}")
+        duplicates = df[df[settings.PRIMARY_KEYS].duplicated()]
         if len(duplicates) > 0:
             logger.warning(f"Found {len(duplicates)} duplicate transactions")
-        df = df.drop_duplicates(subset=['invoice_line_no'])
-        logger.info(f"After dropping duplicates: {df.shape}")
+        df = df.drop_duplicates(subset=settings.PRIMARY_KEYS)
+        logger.info(f"After dropping duplicates: {df.shape[0]} rows")
 
-        df = df[df['sale_bottles'] != 0].reset_index(drop=True)
+        #### Dropping rows with zero sale_bottles
+        logger.info(f"Checking {settings.NONZERO_COLUMNS} with appearance of zero values")
+        for col in settings.NONZERO_COLUMNS:
+            if (df[col] == 0).any():
+                logger.info(f"{col}: zero values: {df[df[col] == 0].shape[0]} rows. Dropping rows with zero values...")
+                df = df[df[col] != 0]
+                logger.info(f"After dropping zero values: {df.shape[0]} rows")
 
+        #### Filling missing values with -1
+        logger.info(f"Checking columns with missing values.")
+        for col in settings.INDEXED_COLUMNS:
+            if df[col].isna().any():
+                logger.info(f"{col}: missing values: {df[df[col].isna()].shape[0]} rows. Filling with -1...")
+                df.loc[df[col].isna(), col] = -1
+
+        for col in settings.CATEGORICAL_COLUMNS:
+            if df[col].isna().any():
+                logger.info(f"{col}: missing values: {df[df[col].isna()].shape[0]} rows. Filling with 'Unknown'...")
+                df.loc[df[col].isna(), col] = 'Unknown'
+
+        #### Droppping stores with less than min_stores_count transactions 
+        #### and stores with more than max_days_between_purchases days between transactions
         df['date'] = pd.to_datetime(df['date'])
         logger.info(f"Start date: {df['date'].min()}, End date: {df['date'].max()}")
         df = df.sort_values(['store', 'date'])
@@ -61,7 +92,7 @@ def validate_and_clean_data(
         rare_stores_by_diff = list(df[df['diff'].isin(rare_diffs)]['store'].unique())
         logger.info(f"Filtered out {len(rare_stores_by_diff)} stores with more than {max_days_between_purchases} days between transactions: {rare_stores_by_diff}")
         df = df[~df['store'].isin(rare_stores_by_diff + rare_stores_by_count)]
-        logger.info(f"After filtering: {df.shape}")
+        logger.info(f"After filtering: {df.shape[0]} rows")
 
     except Exception as e:
         raise Exception(f"Error while validating data: {e}")
