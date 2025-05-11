@@ -3,12 +3,11 @@ Script for constructing TFT datasets with train/validation/test splits.
 """
 
 import argparse
+from math import floor
 import pandas as pd
-import numpy as np
 from pathlib import Path
 import sys
 import logging
-import os
 import pickle
 from pytorch_forecasting import TimeSeriesDataSet
 from pytorch_forecasting.data import GroupNormalizer
@@ -23,80 +22,46 @@ from src.config.configs import settings
 
 def split_data_by_store(
     df: pd.DataFrame,
-    train_ratio: float,
-    val_ratio: float,
-    test_ratio: float,
+    split_ratio: float,
     logger: logging.Logger
 ) -> tuple:
     """
-    Split data into train, validation and test sets by time for each store.
+    Split data into train, validation and test sets 
+    by time for each store.
     
     Args:
         df: Input DataFrame
-        train_ratio: Ratio of data for training
-        val_ratio: Ratio of data for validation
-        test_ratio: Ratio of data for testing
+        split_ratio: Ratio of data for splitting
         logger: Logger instance
         
     Returns:
-        tuple: (train_df, val_df, test_df)
+        tuple: (train_df, val_df)
     """
-    # Sort data by store and time_idx
-    df = df.sort_values(['store', 'time_idx'])
-    
-    # Initialize empty DataFrames for each split
     train_dfs = []
     val_dfs = []
-    test_dfs = []
     
-    # Split data for each store
-    for store in df['store'].unique():
-        store_data = df[df['store'] == store].copy()
-        n_samples = len(store_data)
-        
-        # Calculate split indices
-        train_end = int(n_samples * train_ratio)
-        val_end = train_end + int(n_samples * val_ratio)
-        
-        # Split data
-        train_dfs.append(store_data.iloc[:train_end])
-        val_dfs.append(store_data.iloc[train_end:val_end])
-        test_dfs.append(store_data.iloc[val_end:])
-    
-    # Combine splits
+    logger.info(f"Data split by time for each store:")
+    for _, store_df in df.groupby('store'):
+        train_end = int(len(store_df) * split_ratio)
+        train_dfs.append(store_df.iloc[:train_end])
+        val_dfs.append(store_df.iloc[train_end:])
+    # Concatenate splits. Stores will be distinguished 
+    # by group_ids parameter in TimeSeriesDataSet
     train_df = pd.concat(train_dfs, axis=0)
     val_df = pd.concat(val_dfs, axis=0)
-    test_df = pd.concat(test_dfs, axis=0)
-    
-    # Log split information
-    logger.info(f"Data split by time for each store:")
-    logger.info(f"Train: {len(train_df)} rows")
-    logger.info(f"Validation: {len(val_df)} rows")
-    logger.info(f"Test: {len(test_df)} rows")
-    
-    # Log store coverage
-    train_stores = set(train_df['store'].unique())
-    val_stores = set(val_df['store'].unique())
-    test_stores = set(test_df['store'].unique())
-    all_stores = set(df['store'].unique())
-    
-    logger.info(f"Store coverage:")
-    logger.info(f"Train: {len(train_stores)}/{len(all_stores)} stores")
-    logger.info(f"Validation: {len(val_stores)}/{len(all_stores)} stores")
-    logger.info(f"Test: {len(test_stores)}/{len(all_stores)} stores")
-    
-    return train_df, val_df, test_df
+
+    logger.info(f"Train: {len(train_df)} rows\n\
+                \rValidation: {len(val_df)} rows\n\
+                \rStore coverage: {train_df['store'].nunique()}")
+    return train_df, val_df
 
 
 def construct_tft_datasets(
     df: pd.DataFrame,
     logger: logging.Logger,
-    max_encoder_length: int = 90,
-    max_prediction_length: int = 30,
+    min_history_length: int = 50,
     target_col: str = 'purchase_amount',
-    train_ratio: float = 0.7,
-    val_ratio: float = 0.15,
-    test_ratio: float = 0.15,
+    split_ratio: float = 0.7,
     batch_size: int = 32
 ) -> None:
     """
@@ -105,152 +70,116 @@ def construct_tft_datasets(
     Args:
         df: Input DataFrame with encoded features
         logger: Logger instance
-        max_encoder_length: Maximum lookback window length
-        max_prediction_length: Maximum prediction horizon
+        min_history_length: Minimum history length
         target_col: Target column name
-        train_ratio: Ratio of data for training
-        val_ratio: Ratio of data for validation
-        test_ratio: Ratio of data for testing
+        split_ratio: Ratio of data for splitting
         batch_size: Batch size for DataLoader
     """
     logger.info("Starting construction of TFT datasets")
-    
-    # Split data by store
-    train_df, val_df, test_df = split_data_by_store(
-        df, train_ratio, val_ratio, test_ratio, logger
+    feature_categories = {
+        # Static features - unchanging properties of the series
+        'static_categoricals': [
+            'store','name','address','city','zipcode','county'
+        ],
+        'static_reals': ['lon','lat'],
+        # Time-varying known features - values known in advance
+        'time_varying_known_categoricals': ['is_holiday', 'holiday_name'],
+        'time_varying_known_reals': [
+            *[col for col in df.columns if col.startswith('day')],
+            *[col for col in df.columns if col.startswith('month')],
+            *[col for col in df.columns if col.startswith('quarter')],
+            *[col for col in df.columns if col.startswith('week')],
+            *[col for col in df.columns if col.startswith('year')],
+        ],
+    }
+    feature_categories['time_varying_unknown_reals'] = (
+        set(df.columns) 
+        - set().union(*[set(v) for v in feature_categories.values()])
+        - {'date', 'time_idx'}
     )
+    # Initialize and pre-fit encoders on the entire dataset
+    logger.info("Initializing and pre-fitting categorical encoders on the entire dataset...")
+    categorical_encoders_dict = {
+        **{
+            col: NaNLabelEncoder(add_nan=True) 
+            for col in feature_categories['static_categoricals']
+        },
+        **{
+            col: NaNLabelEncoder(add_nan=True) 
+            for col in feature_categories['time_varying_known_categoricals']
+        }
+    }
+    for col_name, encoder in categorical_encoders_dict.items():
+        df[col_name] = df[col_name].astype('str')
+        unique_values = df[col_name].unique()
+        encoder.fit(unique_values)
+    logger.info("Categorical encoders pre-fitted.")
     
-    # Create training dataset
+    # Filter stores with sufficient number of records
+    store_counts = df.groupby('store').size()
+    valid_stores = store_counts[store_counts >= min_history_length].index
+    logger.info(f"Filtered out stores with insufficient records: \n\
+                \r{store_counts[store_counts < min_history_length].shape[0]} stores. \n\
+                \rRemaining stores: {len(valid_stores)}")
+
+    train_df, val_df = split_data_by_store(
+        df[df['store'].isin(valid_stores)].copy(), 
+        split_ratio, 
+        logger
+    )
+    test_df = df[~df['store'].isin(valid_stores)].copy()
+    logger.info(f"Test set: {len(test_df)} rows")
+
+    min_history_length = floor(min(
+        min_history_length*split_ratio, 
+        min_history_length*(1-split_ratio)
+        )) // 5
+    logger.info(f"Minimum history length: {min_history_length * 2}")
+    logger.info("Constructing training dataset...")
     training = TimeSeriesDataSet(
         train_df,
         time_idx="time_idx",
         target=target_col,
         group_ids=["store"],
-        min_encoder_length=max_encoder_length // 2,
-        max_encoder_length=max_encoder_length,
-        min_prediction_length=1,
-        max_prediction_length=max_prediction_length,
-        static_categoricals=['store', 'city', 'county', 'zipcode'],
-        static_reals=['lat', 'lon'],
-        time_varying_known_categoricals=['is_holiday', 'holiday_name'],
-        time_varying_known_reals=[
-            'day_of_week_sin', 'day_of_week_cos',
-            'month_sin', 'month_cos',
-            'quarter_sin', 'quarter_cos',
-            'days_to_nearest_holiday'
-        ],
-        time_varying_unknown_categoricals=[],
-        time_varying_unknown_reals=[
-            target_col,
-            'purchased_bottles', 
-            'purchased_liters', 
-            'transaction_count',
-            'unique_categories',
-            'unique_items',
-            'avg_price_per_bottle',
-            'avg_price_per_liter',
-            'avg_transaction_value'
-        ] + [col for col in df.columns if any(pattern in col for pattern in ['lag_', 'roll_', 'days_since_'])],
-        target_normalizer=GroupNormalizer(
-            groups=["store"], 
-            transformation="softplus"
-        ),
-         categorical_encoders={
-            'store': NaNLabelEncoder(add_nan=True),
-            'city': NaNLabelEncoder(add_nan=True),
-            'county': NaNLabelEncoder(add_nan=True),
-            'zipcode': NaNLabelEncoder(add_nan=True),
-            'holiday_name': NaNLabelEncoder(add_nan=True),
-        },
+        min_encoder_length=min_history_length//2,
+        max_encoder_length=min_history_length,
+        min_prediction_length=min_history_length//2,
+        max_prediction_length=min_history_length,
+        static_categoricals=feature_categories['static_categoricals'],
+        static_reals=feature_categories['static_reals'],
+        time_varying_known_categoricals=feature_categories['time_varying_known_categoricals'],
+        time_varying_known_reals=feature_categories['time_varying_known_reals'],
+        time_varying_unknown_reals=feature_categories['time_varying_unknown_reals'],
+        # target_normalizer=GroupNormalizer(
+        #     groups=["store"], 
+        #     transformation="softplus"
+        # ),
+        categorical_encoders=categorical_encoders_dict,
+        randomize_length=True,
         add_relative_time_idx=True,
-        add_target_scales=True,
-        add_encoder_length=True,
+        # add_target_scales=True,
+        # add_encoder_length=True,
     )
-    
-    # Create validation dataset
+    logger.info("Training dataset constructed.")
+    logger.info("Constructing validation dataset...")
     validation = TimeSeriesDataSet.from_dataset(
         training, 
         val_df, 
         predict=True, 
         stop_randomization=True,
     )
-    
-    # Create test dataset
+    logger.info("Validation dataset constructed.")
+    logger.info("Constructing test dataset...")
     test = TimeSeriesDataSet.from_dataset(
         training, 
         test_df, 
         predict=True, 
         stop_randomization=True
     )
+    logger.info("Test dataset constructed.")
+    return training, validation, test
     
-    # Create dataloaders
-    train_dataloader = training.to_dataloader(
-        train=True, 
-        batch_size=batch_size, 
-        num_workers=4
-    )
-    val_dataloader = validation.to_dataloader(
-        train=False, 
-        batch_size=batch_size, 
-        num_workers=4
-    )
-    test_dataloader = test.to_dataloader(
-        train=False, 
-        batch_size=batch_size, 
-        num_workers=4
-    )
-    
-    # Save datasets and parameters
-    datasets_dir = Path(settings.PROJECT_ROOT, 'data/prepared/tft_datasets')
-    datasets_dir.mkdir(exist_ok=True, parents=True)
-    
-    # Save datasets
-    torch.save(training, datasets_dir / 'training_dataset.pt')
-    torch.save(validation, datasets_dir / 'validation_dataset.pt')
-    torch.save(test, datasets_dir / 'test_dataset.pt')
-    
-    # Save dataloaders
-    torch.save(train_dataloader, datasets_dir / 'train_dataloader.pt')
-    torch.save(val_dataloader, datasets_dir / 'val_dataloader.pt')
-    torch.save(test_dataloader, datasets_dir / 'test_dataloader.pt')
-    
-    # Save TFT parameters
-    tft_params = {
-        "max_encoder_length": max_encoder_length,
-        "max_prediction_length": max_prediction_length,
-        "time_idx": "time_idx",
-        "target": target_col,
-        "group_ids": ["store"],
-        "static_categoricals": ['store', 'city', 'county', 'zipcode'],
-        "static_reals": ['lat', 'lon'],
-        "time_varying_known_categoricals": ['is_weekend', 'is_holiday', 'holiday_name'],
-        "time_varying_known_reals": [
-            'day_of_week_sin', 'day_of_week_cos',
-            'month_sin', 'month_cos',
-            'quarter_sin', 'quarter_cos',
-            'days_to_nearest_holiday'
-        ],
-        "time_varying_unknown_categoricals": [],
-        "time_varying_unknown_reals": [
-            target_col,
-            'purchased_bottles', 
-            'purchased_liters', 
-            'transaction_count',
-            'unique_categories',
-            'unique_items',
-            'avg_price_per_bottle',
-            'avg_price_per_liter',
-            'avg_transaction_value'
-        ] + [col for col in df.columns if any(pattern in col for pattern in ['lag_', 'roll_', 'days_since_'])]
-    }
-    
-    with open(datasets_dir / 'tft_params.pkl', 'wb') as f:
-        pickle.dump(tft_params, f)
-    
-    logger.info(f"TFT datasets saved in {datasets_dir}")
-    logger.info(f"Train batches: {len(train_dataloader)}")
-    logger.info(f"Validation batches: {len(val_dataloader)}")
-    logger.info(f"Test batches: {len(test_dataloader)}")
+
 
 
 if __name__ == "__main__":
@@ -258,20 +187,16 @@ if __name__ == "__main__":
     parser.add_argument('--log-level', type=str, default='INFO',
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                         help='The logging level')
-    parser.add_argument('--input-file', type=str, default='data/prepared/tft_features_encoded.parquet',
-                        help='Path to the input file with encoded TFT features')
-    parser.add_argument('--max-encoder-length', type=int, default=10,
-                        help='Maximum encoder length (lookback window)')
-    parser.add_argument('--max-prediction-length', type=int, default=10,
-                        help='Maximum prediction length (forecast horizon)')
+    parser.add_argument('--input-file', type=str, default='data/prepared/tft_features.parquet',
+                        help='Path to the input file with TFT features')
+    parser.add_argument('--output-dir', type=str, default='data/prepared/tft_datasets',
+                        help='Path to the output directory for TFT datasets')
+    parser.add_argument('--min-history-length', type=int, default=120,
+                        help='Minimum history length')
     parser.add_argument('--target-col', type=str, default='purchase_amount',
                         help='Target column name')
-    parser.add_argument('--train-ratio', type=float, default=0.7,
-                        help='Ratio of data for training')
-    parser.add_argument('--val-ratio', type=float, default=0.15,
-                        help='Ratio of data for validation')
-    parser.add_argument('--test-ratio', type=float, default=0.15,
-                        help='Ratio of data for testing')
+    parser.add_argument('--split-ratio', type=float, default=0.7,
+                        help='Ratio of data for splitting')
     parser.add_argument('--batch-size', type=int, default=80,
                         help='Batch size for DataLoader')
     
@@ -280,19 +205,24 @@ if __name__ == "__main__":
     
     try:
         df = pd.read_parquet(Path(settings.PROJECT_ROOT, args.input_file))
-        df[['store', 'zipcode','is_holiday']] = df[['store', 'zipcode','is_holiday']].astype(str)
-        logger.info(f"Encoded TFT features loaded. Shape: {df.shape}")
+        logger.info(f"Prepared TFT features loaded. Shape: {df.shape}")
     except Exception as e:
-        raise Exception(f"Error while loading encoded TFT features: {e}")
+        raise Exception(f"Error while loading prepared TFT features: {e}")
     
-    construct_tft_datasets(
+    train, val, test = construct_tft_datasets(
         df=df,
         logger=logger,
-        max_encoder_length=args.max_encoder_length,
-        max_prediction_length=args.max_prediction_length,
+        min_history_length=args.min_history_length,
         target_col=args.target_col,
-        train_ratio=args.train_ratio,
-        val_ratio=args.val_ratio,
-        test_ratio=args.test_ratio,
+        split_ratio=args.split_ratio,
         batch_size=args.batch_size
     ) 
+    try:
+        datasets_dir = Path(settings.PROJECT_ROOT, args.output_dir)
+        datasets_dir.mkdir(exist_ok=True, parents=True)
+
+        torch.save(train, datasets_dir / 'training_dataset.pt')
+        torch.save(val, datasets_dir / 'validation_dataset.pt')
+        torch.save(test, datasets_dir / 'test_dataset.pt')
+    except Exception as e:
+        raise Exception(f"Error while saving TFT datasets: {e}")
