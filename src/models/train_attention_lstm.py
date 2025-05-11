@@ -16,7 +16,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.utils import setup_logger
+from src.utils.data_utils import setup_logger
 from src.config.configs import settings
 from src.models.attention_lstm import HybridLSTMAttn
 

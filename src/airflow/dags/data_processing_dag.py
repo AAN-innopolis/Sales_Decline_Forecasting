@@ -16,7 +16,8 @@ from airflow.configuration import conf
 from airflow.sdk import chain
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DAG_TASKS_DIR = PROJECT_ROOT / "src" / "airflow" / "dag_tasks"
+DAG_TASKS_DIR = PROJECT_ROOT / "src" / "airflow" / "dag_tasks" / "data_preparation"
+DATA_RESULTS_DIR = PROJECT_ROOT / "data" / "prepared"
 
 default_args = {
     'owner': 'airflow',
@@ -42,7 +43,7 @@ dag = DAG(
 with TaskGroup(group_id='data_preparation', dag=dag) as data_preparation:
     check_data_exists = FileSensor(
         task_id='check_data_exists',
-        filepath='data/raw/sazerac_df.csv',
+        filepath='data/raw/combined_data.parquet',
         poke_interval=60,  # проверять каждую минуту
         timeout=60 * 1,    # таймаут 5 минут
         mode='poke',
@@ -57,7 +58,7 @@ with TaskGroup(group_id='data_preparation', dag=dag) as data_preparation:
     
     check_cleaned_data = FileSensor(
         task_id='check_cleaned_data',
-        filepath='data/prepared/cleaned_data.parquet',
+        filepath=DATA_RESULTS_DIR / 'cleaned_data.parquet',
         poke_interval=60,
         timeout=60 * 5,
         mode='poke',
@@ -78,7 +79,7 @@ with TaskGroup(group_id='model_features_preparation', dag=dag) as model_features
         
         check_lstm_tft_features = FileSensor(
             task_id='check_features',
-            filepath='data/prepared/lstm_tft_features.parquet',
+            filepath=DATA_RESULTS_DIR / 'lstm_tft_features.parquet',
             poke_interval=60,
             timeout=60 * 5,
             mode='poke',
@@ -146,7 +147,7 @@ with TaskGroup(group_id='model_features_preparation', dag=dag) as model_features
 with TaskGroup(group_id='check_features_exist', dag=dag) as check_features_exist:
     check_lstm_features = FileSensor(
         task_id='check_lstm_features',
-        filepath='data/prepared/lstm_features.parquet',
+        filepath=DATA_RESULTS_DIR / 'lstm_features.parquet',
         poke_interval=60,
         timeout=60 * 5,
         mode='poke',
@@ -155,7 +156,7 @@ with TaskGroup(group_id='check_features_exist', dag=dag) as check_features_exist
     
     check_tft_features = FileSensor(
         task_id='check_tft_features',
-        filepath='data/prepared/tft_features.parquet',
+        filepath=DATA_RESULTS_DIR / 'tft_features.parquet',
         poke_interval=60,
         timeout=60 * 5,
         mode='poke',
@@ -164,7 +165,7 @@ with TaskGroup(group_id='check_features_exist', dag=dag) as check_features_exist
     
     check_llm_features = FileSensor(
         task_id='check_llm_features',
-        filepath='data/prepared/llm_features.parquet',
+        filepath=DATA_RESULTS_DIR / 'llm_features.parquet',
         poke_interval=60,
         timeout=60 * 5,
         mode='poke',

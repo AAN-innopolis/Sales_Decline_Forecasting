@@ -10,11 +10,11 @@ import sys
 import logging
 import os
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
-from src.utils import setup_logger, load_data, save_data
-from src.features.store_encoder import StoreEncoder
-from src.features.feature_scaler import FeatureScaler
+from src.utils.data_utils import setup_logger, load_data, save_data
+from src.utils.data_utils.store_encoder import StoreEncoder
+from src.utils.data_utils.feature_scaler import FeatureScaler
 from src.config.configs import settings
 
 def encode_lstm_data(

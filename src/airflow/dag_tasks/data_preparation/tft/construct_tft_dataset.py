@@ -15,9 +15,9 @@ from pytorch_forecasting.data import GroupNormalizer
 from pytorch_forecasting.data.encoders import NaNLabelEncoder
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
-from src.utils import setup_logger
+from src.utils.data_utils import setup_logger
 from src.config.configs import settings
 
 
