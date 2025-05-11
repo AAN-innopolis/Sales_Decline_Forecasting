@@ -106,9 +106,9 @@ def create_rolling_features(
 
     all_rolling_features = reduce(lambda left, right: pd.merge(left, right, on=['store', 'date'], how='left'), rolling_feature_dfs)
     df = df.merge(all_rolling_features, on=['store', 'date'], how='left')
-    logger.info(f"Rolling features created.\
-                Shape: {df.shape}, \
-                Columns: {df.columns}")
+    logger.info(f"Rolling features created.\n\
+                \rShape: {df.shape},\n\
+                \rColumns: {df.columns}")
     return df
 
 def prepare_lstm_sequences(df: pd.DataFrame, sequence_length: int = 30) -> np.ndarray:

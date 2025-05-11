@@ -111,10 +111,6 @@ def get_base_statistics(
             .reset_index()
     )
 
-    # if (statistics['sale_bottles'] == 0).any():
-    #     logger.info("Zeros present in sale_bottles.")
-    # print(statistics.columns)
-
     statistics['state_bottle_cost_avg'] = (
          statistics['state_bottle_cost_total'] / statistics['sale_bottles'].replace(0, np.nan)
     ).replace(np.nan, 0)
@@ -161,73 +157,80 @@ def get_extended_statistics(
     Returns:
         pd.DataFrame: Aggregated dataframe per store and date containing additional statistics
     """
-
-    def safe_mean(arr):
-        return np.mean(arr) if len(arr) > 0 else 0
-
-    def safe_median(arr):
-        return np.median(arr) if len(arr) > 0 else 0
-
-    def expand_by_weight(values, weights):
-        values = np.asarray(values)
-        weights = np.abs(np.asarray(weights)).astype(int)
-        if len(values) != len(weights):
-            return values
-        return np.repeat(values, weights)
+    
+    def weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
+        """Vectorized O(n log n) weighted median."""
+        sorter = np.argsort(values)
+        v_sorted = values[sorter]
+        w_sorted = weights[sorter]
+        cum_w = w_sorted.cumsum()
+        cut = w_sorted.sum() / 2
+        return v_sorted[cum_w >= cut][0]
 
     df = df_original.copy()
     logger.info("Creating additional statistics")
 
-    df['pack_number'] = np.ceil(df['sale_bottles'] / df['pack'])
+    # number of packs actually delivered
+    df['pack_number'] = (np.ceil(df['sale_bottles'] / df['pack'].replace(0, np.nan))).replace(np.nan, 0)
 
-    statistics = df.groupby(['store', 'date']).agg({
-        # Sales - basic metrics and distributions
-        'sale_bottles': ['mean', 'median', 'min', 'max'],
-        'sale_dollars': ['mean', 'median', 'min', 'max'],
-        'sale_liters': ['mean', 'median', 'min', 'max'],
-        # Statistics on bottle costs
-        'sale_bottles': list,
-        'state_bottle_cost': list,
-        # Statistics on packs and volumes
-        'pack': list,
-        'pack_number': list,
-        'bottle_volume_ml': list
-    }).reset_index()
-    statistics.columns = ['_'.join(col).strip('_') for col in statistics.columns.values]
-    statistics['expanded_costs'] = statistics.apply(
-		lambda row: expand_by_weight(row['state_bottle_cost_list'], row['sale_bottles_list']),
-		axis=1
-	)
-    statistics['expanded_volumes'] = statistics.apply(
-		lambda row: expand_by_weight(row['bottle_volume_ml_list'], row['sale_bottles_list']),
-		axis=1
-	)
-    statistics['expanded_packs'] = statistics.apply(
-		lambda row: expand_by_weight(row['pack_list'], row['pack_number_list']),
-		axis=1
-	)
+    # pre-multiply one time
+    df['cost_full'] = df['state_bottle_cost'] * df['sale_bottles']
+    df['vol_full'] = df['bottle_volume_ml'] * df['sale_bottles']
+    df['pack_full'] = df['pack'] * df['pack_number']
 
-    statistics['state_bottle_cost_mean'] = statistics['expanded_costs'].apply(safe_mean)
-    statistics['state_bottle_cost_median'] = statistics['expanded_costs'].apply(safe_median)
-    statistics['bottle_volume_ml_mean'] = statistics['expanded_volumes'].apply(safe_mean)
-    statistics['bottle_volume_ml_median'] = statistics['expanded_volumes'].apply(safe_median)
-    statistics['pack_mean'] = statistics['expanded_packs'].apply(safe_mean)
-    statistics['pack_median'] = statistics['expanded_packs'].apply(safe_median)
-    statistics.drop(columns=['expanded_costs', 'expanded_volumes', 'expanded_packs'], inplace=True)
+    grp_cols = ['store', 'date']
+    g = df.groupby(grp_cols, sort=False)
 
-    statistics['state_bottle_cost_min'] = statistics['state_bottle_cost_list'].apply(min)
-    statistics['pack_min'] = statistics['pack_list'].apply(min)
-    statistics['bottle_volume_ml_min'] = statistics['bottle_volume_ml_list'].apply(min)
-    statistics['state_bottle_cost_max'] = statistics['state_bottle_cost_list'].apply(max)
-    statistics['pack_max'] = statistics['pack_list'].apply(max)
-    statistics['bottle_volume_ml_max'] = statistics['bottle_volume_ml_list'].apply(max)
-    statistics.drop(columns=['state_bottle_cost_list', 'bottle_volume_ml_list',
-                             'pack_list', 'pack_number_list', 'sale_bottles_list'], inplace=True)
-    logger.info(f"Extended statistics created.\
-                Shape: {statistics.shape},\
-                Columns: {statistics.columns}")
-    return statistics
+    basic = g.agg({
+        'sale_bottles'     : ['mean', 'median', 'min', 'max', 'sum'],
+        'sale_dollars'     : ['mean', 'median', 'min', 'max'],
+        'sale_liters'      : ['mean', 'median', 'min', 'max'],
+        'state_bottle_cost': ['min', 'max'],
+        'bottle_volume_ml' : ['min', 'max'],
+        'pack'             : ['min', 'max'],
+        'pack_number'      : ['sum']
+    })
 
+    basic.columns = [
+        f"{col}_{func}" if func else col
+        for col, func in basic.columns.to_flat_index()
+    ]
+
+    totals = g.agg(
+        cost_total = ('cost_full', 'sum'),
+        vol_total  = ('vol_full',  'sum'),
+        pack_total = ('pack_full', 'sum')
+    )
+
+    means = pd.DataFrame({
+        'state_bottle_cost_mean': (totals['cost_total'] / basic['sale_bottles_sum'].replace(0, np.nan)).replace(np.nan, 0),
+        'bottle_volume_ml_mean': (totals['vol_total']  / basic['sale_bottles_sum'].replace(0, np.nan)).replace(np.nan, 0),
+        'pack_mean': (totals['pack_total'] / basic['pack_number_sum'].replace(0, np.nan)).replace(np.nan, 0)
+    })
+
+    def _medians(sub: pd.DataFrame) -> pd.Series:
+        sb = sub['sale_bottles'].abs().to_numpy() # weights for cost & volume
+        pn = sub['pack_number'].abs().to_numpy() # weights for pack
+        return pd.Series({
+            'state_bottle_cost_median': weighted_median(sub['state_bottle_cost'].to_numpy(), sb),
+            'bottle_volume_ml_median': weighted_median(sub['bottle_volume_ml'].to_numpy(), sb),
+            'pack_median': weighted_median(sub['pack'].to_numpy(), pn)
+        })
+    
+    medians = g.apply(_medians, include_groups=False)
+
+    stats = (
+        basic
+        .drop(columns=['sale_bottles_sum', 'pack_number_sum'])
+        .join(means)
+        .join(medians)
+        .reset_index()
+        .astype({'store': df['store'].dtype})
+    )
+    logger.info(f"Extended statistics created.\n\
+                \rShape: {stats.shape},\n\
+                \rColumns: {stats.columns}")
+    return stats
 
 def get_derived_features(
         df_original: pd.DataFrame, 
@@ -269,9 +272,9 @@ def get_derived_features(
         'avg_items_per_transaction', 
         'avg_transaction_value'
     ]]
-    logger.info(f"Derived features created.\
-                Shape: {df_derived.shape},\
-                Columns: {df_derived.columns}")
+    logger.info(f"Derived features created.\n\
+                \rShape: {df_derived.shape},\n\
+                \rColumns: {df_derived.columns}")
     return df_derived
 
 
@@ -301,10 +304,15 @@ def get_store_attributes(
         'county': lambda x: x.mode()[0]
     }).reset_index()
     
-    store_locations = store_attributes['store_location'].apply(lambda x: eval(x) if pd.notna(x) else None)
-    store_attributes['lon'] = store_locations.apply(lambda x: x['coordinates'][0] if pd.notna(x) else None)
-    store_attributes['lat'] = store_locations.apply(lambda x: x['coordinates'][1] if pd.notna(x) else None)
-    
+    store_attributes[['lon', 'lat']] = None
+    mask = store_attributes['store_location'].notna()
+    coords = (
+        store_attributes.loc[mask, 'store_location']
+        .apply(lambda x: eval(x)['coordinates'])
+    )
+
+    store_attributes.loc[mask, ['lon', 'lat']] = pd.DataFrame(coords.tolist(), index=coords.index)
+
     logger.info(f"Store attributes created.\
                 Shape: {store_attributes.shape},\
                 Columns: {store_attributes.columns}")
@@ -334,9 +342,9 @@ def get_item_details(
         .drop_duplicates()
         .to_dict('records'), include_groups=False
     ).reset_index(name='item_details')
-    logger.info(f"Item details created.\
-                Shape: {item_details.shape},\
-                Columns: {item_details.columns}")
+    logger.info(f"Item details created.\n\
+                \rShape: {item_details.shape},\n\
+                \rColumns: {item_details.columns}")
     return item_details
 
 def get_holiday_features(
@@ -394,9 +402,9 @@ def get_holiday_features(
         holiday_features['days_to_nearest_holiday'] = days_diff
         holiday_features = holiday_features.reset_index()
         
-        logger.info(f"Holiday features created.\
-                    Shape: {holiday_features.shape},\
-                    Columns: {holiday_features.columns}")
+        logger.info(f"Holiday features created.\n\
+                    \rShape: {holiday_features.shape},\n\
+                    \rColumns: {holiday_features.columns}")
         return holiday_features
     except Exception as e:
         raise Exception(f"Error while creating holiday features: {e}")
@@ -468,9 +476,9 @@ def get_cyclical_features(
             'week_of_year_cos',
             'year',
         ]]
-    logger.info(f"Cyclical features created.\
-                Shape: {df.shape},\
-                Columns: {df.columns}")
+    logger.info(f"Cyclical features created.\n\
+                \rShape: {df.shape},\n\
+                \rColumns: {df.columns}")
     return df
 
 
@@ -571,8 +579,8 @@ def get_store_features(
         store_dfs.append(store_df.set_index('store', append=True))
         
     store_dfs = pd.concat(store_dfs).reset_index()
-    logger.info(f"Store features created. \
-                Shape: {store_dfs.shape}, \
-                Columns: {store_dfs.columns}")
+    logger.info(f"Store features created.\n\
+                \rShape: {store_dfs.shape},\n\
+                \rColumns: {store_dfs.columns}")
     return store_dfs
 
