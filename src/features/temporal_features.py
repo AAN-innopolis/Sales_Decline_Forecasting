@@ -6,36 +6,36 @@ Contains functions for creating features and preparing sequences for LSTM models
 import logging
 import pandas as pd
 import numpy as np
-
+from pathlib import Path
 from datetime import timedelta
 from functools import reduce
+import sys
+sys.path.append(str(Path(__file__).resolve().parents[3]))
+from src.config.configs import settings
 
-def create_rolling_features(
+def get_lag_features(
         df_original: pd.DataFrame, 
         logger: logging.Logger
     ) -> pd.DataFrame:
     """
-    Create rolling features for time series with grouping by stores.
-    
+    Create lag features for time series with grouping by stores and date.
+
     Args:
         df_original (pandas.DataFrame): Dataframe with data
         logger (logging.Logger): The logger object
         
     Returns:
-        pandas.DataFrame: LSTM (rolling) features
+        pandas.DataFrame: LSTM (lag) features
     """
-    logger.info("Creating rolling features") 
+    logger.info("Creating lag features") 
     df = df_original[['store','date']].copy()
 
     lookup = df_original[['store', 'date', 'purchase_amount']].copy()
     lookup.rename(columns={'purchase_amount': 'past_purchase'}, inplace=True)
    
-    lag_periods = [1, 2, 3, 4, 5, 6, 7, 8]
-    window_sizes = ['2D', '4D', '8D', '12D', '30D', '60D', '90D']
+    lag_periods = settings.LAG_PERIODS
     for period in lag_periods:
         df[f'lag_{period}_date'] = df['date'] - timedelta(days=period)
-        
-        
         df = df.merge(
             lookup,
             left_on=['store', f'lag_{period}_date'],
@@ -49,12 +49,35 @@ def create_rolling_features(
 
         df[f'prev_{period}_purchase_amount'] = df[f'prev_{period}_purchase_amount'].fillna(0)
 
+    logger.info(f"Lag features created.\n\
+                \rShape: {df.shape}, \n\
+                \rColumns: \n{df.columns}")
+    return df
+    
+
+def get_rolling_features(
+        df_original: pd.DataFrame, 
+        logger: logging.Logger
+    ) -> pd.DataFrame:
+    """
+    Create rolling features for time series with grouping by stores and date.
+    
+    Args:
+        df_original (pandas.DataFrame): Dataframe with data
+        logger (logging.Logger): The logger object
+        
+    Returns:
+        pandas.DataFrame: LSTM (rolling) features
+    """
+    logger.info("Creating rolling features") 
+    df = df_original[['store','date']].copy()
+
+    window_sizes = settings.ROLLING_WINDOW_SIZES
+    
     temp = df_original[['store', 'date', 'purchase_amount', 'days_since_prev_purchase']].copy()
     temp = temp.sort_values(by=['store', 'date'])
     rolling_feature_dfs = []
-    
     for window in window_sizes:
-
         stats = (
             temp
             .set_index('date')
@@ -63,7 +86,6 @@ def create_rolling_features(
             .agg(['mean', 'std', 'max', 'min', 'median'])
             .reset_index()
         )
-
         stats = stats.rename(columns={
             'mean': f'hist_mean_{window}_purchases_amount',
             'std': f'hist_std_{window}_purchases_amount',
@@ -71,9 +93,7 @@ def create_rolling_features(
             'min': f'hist_min_{window}_purchases_amount',
             'median': f'hist_median_{window}_purchases_amount',
         })
-
         stats = stats.merge(temp[['store', 'date', 'purchase_amount']], on=['store', 'date'], how='left')
-
         # Calculate momentum as difference 
         # between current purchase 
         # and rolling mean of previous 'window' purchases
@@ -87,7 +107,6 @@ def create_rolling_features(
         stats[f'purchase_momentum_pct_{window}'] = (
             (stats['purchase_amount'] / stats[f'hist_mean_{window}_purchases_amount'].replace(0, np.nan) - 1) * 100
         )
-
         # Calculate average days between purchases using historical data
         avg_days = (
             temp
@@ -101,15 +120,15 @@ def create_rolling_features(
 
         stats = stats.merge(avg_days, on=['store', 'date'], how='left')
         stats.drop(columns=['purchase_amount'], inplace=True)
-
         rolling_feature_dfs.append(stats)
 
     all_rolling_features = reduce(lambda left, right: pd.merge(left, right, on=['store', 'date'], how='left'), rolling_feature_dfs)
     df = df.merge(all_rolling_features, on=['store', 'date'], how='left')
     logger.info(f"Rolling features created.\n\
-                \rShape: {df.shape},\n\
-                \rColumns: {df.columns}")
+                \rShape: {df.shape}, \n\
+                \rColumns: \n{df.columns}")
     return df
+
 
 def prepare_lstm_sequences(df: pd.DataFrame, sequence_length: int = 30) -> np.ndarray:
     """

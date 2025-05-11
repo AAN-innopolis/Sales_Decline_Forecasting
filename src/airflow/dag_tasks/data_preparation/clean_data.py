@@ -5,11 +5,11 @@ import argparse
 import pandas as pd
 from pathlib import Path
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from src.utils import setup_logger, load_data
+from src.utils.data_utils import setup_logger, load_data
 from src.config.configs import settings
-from src.features.core_features import (
+from src.features.transaction_aggregation_features import (
     validate_and_clean_data
 )
 

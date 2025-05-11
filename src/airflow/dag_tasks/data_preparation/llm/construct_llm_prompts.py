@@ -11,9 +11,9 @@ import logging
 import os
 import json
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
-from src.utils import setup_logger
+from src.utils.data_utils import setup_logger
 from src.features.llm_features import prepare_llm_prompts
 from src.config.configs import settings
 

@@ -8,9 +8,10 @@ from pathlib import Path
 import sys
 import logging
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from src.utils import setup_logger
-from src.features.core_features import (
+sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
+from src.features.temporal_features import create_rolling_features
+from src.utils.data_utils import setup_logger
+from src.features.static_features import (
     get_holiday_features,
     get_store_attributes, 
     get_store_features
@@ -52,10 +53,18 @@ def prepare_tft_data(
         )
     )
     df_store_features = get_store_features(df_res, logger)
-    df_res = df_res.merge(
-        df_store_features, 
-        on=['store', 'date'], 
-        how='left'
+    df_rolling = create_rolling_features(df, logger) 
+
+    df_res = (df_res
+        .merge(
+            df_store_features, 
+            on=['store', 'date'], 
+            how='left'
+        ).merge(
+            df_rolling, 
+            on=['store', 'date'], 
+            how='left'
+        )
     )
 
     logger.info(f"Final data shape: {df_res.shape}")

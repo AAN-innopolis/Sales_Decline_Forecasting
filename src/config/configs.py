@@ -55,7 +55,8 @@ class Settings(BaseSettings):
         'address',
         'city',
         'county', 
-        'im_desc'
+        'im_desc',
+        'store_location',
     ]
 
     ### LLM FEATURE
@@ -71,7 +72,13 @@ class Settings(BaseSettings):
         'sale_liters',
     ]
 
-    
+    ### LAGS AND ROLLING FEATURES
+    LAG_PERIODS: List[int] = [
+        7, 14, 21
+    ]
+    ROLLING_WINDOW_SIZES: List[str] = [
+        '7D', '14D', '21D', '30D', '60D', '90D'
+    ]
 
     class Config:
         env_file = ".env"

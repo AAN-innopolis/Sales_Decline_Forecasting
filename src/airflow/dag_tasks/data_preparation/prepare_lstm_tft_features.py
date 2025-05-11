@@ -7,18 +7,19 @@ from pathlib import Path
 import sys
 import logging
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from src.utils import setup_logger, load_data
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+from src.utils.data_utils import setup_logger, load_data
 from src.config.configs import settings
-from src.features.core_features import ( 
-    get_base_statistics, 
+from src.features.transaction_aggregation_features import (
+    get_base_statistics,
     get_extended_statistics,
-    get_derived_features,
-    get_store_attributes,
-    get_holiday_features,
+)
+from src.features.static_features import ( 
     get_cyclical_features
 )
-
+from src.features.store_date_features import (
+    get_derived_features
+)
 
 
 def prepare_lstm_tft_features(
@@ -41,8 +42,6 @@ def prepare_lstm_tft_features(
 
     df_base = get_base_statistics(df, logger)
     df_extended = get_extended_statistics(df, logger)
-    # df_store_attributes = get_store_attributes(df, logger)
-    # df_holidays = get_holiday_features(df, logger)
     df_cyclical = get_cyclical_features(df, logger)
     
     
@@ -51,21 +50,12 @@ def prepare_lstm_tft_features(
             df_extended, 
             on=['store', 'date'], 
             how='left'
-        # ).merge(
-        #     df_store_attributes, 
-        #     on=['store'], 
-        #     how='left'
-        # ).merge(
-        #     df_holidays, 
-        #     on=['date'], 
-        #     how='left'
         ).merge(
             df_cyclical, 
             on=['date'], 
             how='left'
         )
     )
-
     df_derived = get_derived_features(df_res, logger)
     df_res = df_res.merge(
             df_derived, 
