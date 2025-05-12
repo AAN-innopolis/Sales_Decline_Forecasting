@@ -90,7 +90,6 @@ def construct_tft_datasets(
             *[col for col in df.columns if col.startswith('month')],
             *[col for col in df.columns if col.startswith('quarter')],
             *[col for col in df.columns if col.startswith('week')],
-            *[col for col in df.columns if col.startswith('year')],
         ],
     }
     feature_categories['time_varying_unknown_reals'] = (
@@ -135,7 +134,7 @@ def construct_tft_datasets(
     min_history_length = floor(min(
         min_history_length*split_ratio, 
         min_history_length*(1-split_ratio)
-        )) // 5
+        )) // 4
     logger.info(f"Minimum history length: {min_history_length * 2}")
     logger.info("Constructing training dataset...")
     training = TimeSeriesDataSet(
@@ -159,8 +158,8 @@ def construct_tft_datasets(
         categorical_encoders=categorical_encoders_dict,
         randomize_length=True,
         add_relative_time_idx=True,
-        # add_target_scales=True,
-        # add_encoder_length=True,
+        add_target_scales=True,
+        #add_encoder_length=True,
     )
     logger.info("Training dataset constructed.")
     logger.info("Constructing validation dataset...")
@@ -191,7 +190,7 @@ if __name__ == "__main__":
                         help='Path to the input file with TFT features')
     parser.add_argument('--output-dir', type=str, default='data/prepared/tft_datasets',
                         help='Path to the output directory for TFT datasets')
-    parser.add_argument('--min-history-length', type=int, default=120,
+    parser.add_argument('--min-history-length', type=int, default=150,
                         help='Minimum history length')
     parser.add_argument('--target-col', type=str, default='purchase_amount',
                         help='Target column name')

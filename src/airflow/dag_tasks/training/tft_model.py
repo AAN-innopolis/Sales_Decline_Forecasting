@@ -14,6 +14,7 @@ from lightning.pytorch import seed_everything
 from lightning.pytorch.tuner import Tuner
 from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.metrics import QuantileLoss
+import torch.optim.lr_scheduler as lr_scheduler
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
@@ -78,7 +79,9 @@ def train_tft_model(
     gradient_clip_val: float = 0.1,
     gradient_clip_algorithm: str = "norm",
     use_swa: bool = False,
-    swa_learning_rate: float = 0.05
+    swa_learning_rate: float = 0.05,
+    use_onecycle: bool = False,
+    ckpt_path: str = None
 ) -> None:
     """
     Configure and train the TFT model.
@@ -101,6 +104,8 @@ def train_tft_model(
         gradient_clip_algorithm: Gradient clipping algorithm ("norm" or "value").
         use_swa: Whether to use Stochastic Weight Averaging.
         swa_learning_rate: Learning rate for SWA.
+        use_onecycle: Whether to use OneCycleLR learning rate scheduler.
+        ckpt_path: Path to checkpoint to resume training from.
     """
     logger.info("Starting TFT model training...")
 
@@ -120,19 +125,26 @@ def train_tft_model(
     )
 
     lr_monitor = LearningRateMonitor(logging_interval="epoch")
-
-    # Initialize callbacks list
     callbacks_list = [lr_monitor, early_stop_callback]
-
-    # Add SWA if enabled
     if use_swa:
         swa_callback = StochasticWeightAveraging(swa_lrs=swa_learning_rate)
         callbacks_list.append(swa_callback)
         logger.info(f"Stochastic Weight Averaging (SWA) enabled with SWA LR: {swa_learning_rate}")
 
-    tb_logger = TensorBoardLogger(save_dir=str(log_dir), name="tft_model")
+    tb_logger = TensorBoardLogger(save_dir=str(log_dir), name="tft_model", log_graph=True)
 
-    tft_model = TemporalFusionTransformer.from_dataset(
+    class TFTWithScheduler(TemporalFusionTransformer):
+        def configure_optimizers(self):
+            opt = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+            scheduler = {
+                'scheduler': lr_scheduler.ReduceLROnPlateau(opt, mode='min', factor=0.5, patience=5, min_lr=1e-8),
+                'monitor': 'val_loss',
+                'interval': 'epoch',
+                'frequency': 1
+            }
+            return [opt], [scheduler]
+
+    tft_model = TFTWithScheduler.from_dataset(
         training_dataset,
         learning_rate=learning_rate,
         hidden_size=hidden_size,
@@ -140,12 +152,30 @@ def train_tft_model(
         dropout=dropout,
         hidden_continuous_size=hidden_size // 2,
         lstm_layers=lstm_layers,
-        output_size=7,  # Number of quantiles to predict (0.02, 0.1, 0.25, 0.5, 0.75, 0.9, 0.98)
+        output_size=11,  # Number of quantiles to predict (0.02, 0.1, 0.25, 0.5, 0.75, 0.9, 0.98)
         loss=QuantileLoss(),
         log_interval=50, # Log N times per epoch
         reduce_on_plateau_patience=4,
     )
     logger.info(f"Temporal Fusion Transformer model initialized:")
+
+    lr_scheduler_config = None
+    if use_onecycle:
+        logger.info("Using OneCycleLR scheduler.")
+        steps_per_epoch = len(training_dataset) // args.batch_size
+        lr_scheduler_config = {
+            "scheduler": torch.optim.lr_scheduler.OneCycleLR,
+            "interval": "step",
+            "frequency": 1,
+            "monitor": "val_loss",
+            "scheduler_args": {
+                "max_lr": learning_rate,
+                "steps_per_epoch": steps_per_epoch,
+                "epochs": max_epochs,
+                "anneal_strategy": "cos",
+            },
+        }
+
     trainer = L.Trainer(
         max_epochs=max_epochs,
         accelerator='gpu' if gpus > 0 else 'cpu',
@@ -163,11 +193,28 @@ def train_tft_model(
     )
 
     logger.info("Training the model...")
-    trainer.fit(
-        tft_model,
-        train_dataloaders=train_dataloader,
-        val_dataloaders=val_dataloader,
-    )
+    if use_onecycle and lr_scheduler_config is not None:
+        optimizer = tft_model.configure_optimizers()[0]
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=learning_rate,
+            steps_per_epoch=steps_per_epoch,
+            epochs=max_epochs,
+            anneal_strategy="cos"
+        )
+        trainer.fit(
+            tft_model,
+            train_dataloaders=train_dataloader,
+            val_dataloaders=val_dataloader,
+            ckpt_path=ckpt_path
+        )
+    else:
+        trainer.fit(
+            tft_model,
+            train_dataloaders=training_dataset.to_dataloader(train=True, batch_size=args.batch_size, num_workers=args.num_workers),
+            val_dataloaders=validation_dataset.to_dataloader(train=False, batch_size=args.batch_size, num_workers=args.num_workers),
+            ckpt_path=ckpt_path
+        )
 
     best_model_path = trainer.checkpoint_callback.best_model_path
     logger.info(f"Best model path: {best_model_path}")
@@ -213,12 +260,10 @@ if __name__ == "__main__":
     parser.add_argument("--num-heads", type=int, default=4, help="Number of attention heads.")
     parser.add_argument("--dropout", type=float, default=0.1, help="Dropout rate.")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Initial learning rate.")
-    parser.add_argument("--patience", type=int, default=10, help="Patience for early stopping.")
+    parser.add_argument("--patience", type=int, default=50, help="Patience for early stopping.")
     parser.add_argument("--max-epochs", type=int, default=100, help="Maximum number of training epochs.")
     parser.add_argument("--gpus", type=int, default=1 if torch.cuda.is_available() else 0, help="Number of GPUs to use (0 for CPU).")
     parser.add_argument("--gradient-clip-val", type=float, default=0.1, help="Gradient clipping value.")
-
-    # New arguments for advanced Trainer features
     parser.add_argument(
         "--precision", 
         type=str, 
@@ -278,6 +323,17 @@ if __name__ == "__main__":
         default=0.05,
         help="Learning rate for SWA scheduler. Default is 0.05."
     )
+    parser.add_argument(
+        "--use-onecycle",
+        action="store_true",
+        help="Use OneCycleLR learning rate scheduler."
+    )
+    parser.add_argument(
+        "--ckpt-path",
+        type=str,
+        default=None,
+        help="Path to checkpoint to resume training from."
+    )
 
     args = parser.parse_args()
     
@@ -293,7 +349,6 @@ if __name__ == "__main__":
     model_output_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load datasets once before any model initialization or tuning
     try:
         training_dataset, validation_dataset, test_dataset = load_datasets(data_dir, logger)
     except FileNotFoundError:
@@ -378,9 +433,11 @@ if __name__ == "__main__":
             gradient_clip_val=args.gradient_clip_val,
             gradient_clip_algorithm=args.gradient_clip_algorithm,
             use_swa=args.use_swa,
-            swa_learning_rate=args.swa_learning_rate
+            swa_learning_rate=args.swa_learning_rate,
+            use_onecycle=args.use_onecycle,
+            ckpt_path=args.ckpt_path
         )
-    except FileNotFoundError: # This specific catch might be redundant now if initial load is robust
+    except FileNotFoundError:
         logger.error("Essential dataset(s) not found. Exiting.")
         sys.exit(1)
     except Exception as e:
