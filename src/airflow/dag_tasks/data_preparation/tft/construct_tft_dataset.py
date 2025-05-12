@@ -62,8 +62,7 @@ def construct_tft_datasets(
     min_history_length: int = 50,
     target_col: str = 'purchase_amount',
     split_ratio: float = 0.7,
-    batch_size: int = 32
-) -> None:
+) -> tuple[TimeSeriesDataSet, TimeSeriesDataSet, TimeSeriesDataSet]:
     """
     Construct and save TFT datasets.
     
@@ -73,7 +72,9 @@ def construct_tft_datasets(
         min_history_length: Minimum history length
         target_col: Target column name
         split_ratio: Ratio of data for splitting
-        batch_size: Batch size for DataLoader
+        
+    Returns:
+        tuple: (train_dataset, val_dataset, test_dataset)
     """
     logger.info("Starting construction of TFT datasets")
     feature_categories = {
@@ -181,8 +182,6 @@ def construct_tft_datasets(
     return training, validation, test
     
 
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Script for constructing TFT datasets')
     parser.add_argument('--log-level', type=str, default='INFO',
@@ -198,8 +197,6 @@ if __name__ == "__main__":
                         help='Target column name')
     parser.add_argument('--split-ratio', type=float, default=0.7,
                         help='Ratio of data for splitting')
-    parser.add_argument('--batch-size', type=int, default=80,
-                        help='Batch size for DataLoader')
     
     args = parser.parse_args()
     logger = setup_logger(name=__name__, level=args.log_level)
@@ -216,7 +213,6 @@ if __name__ == "__main__":
         min_history_length=args.min_history_length,
         target_col=args.target_col,
         split_ratio=args.split_ratio,
-        batch_size=args.batch_size
     ) 
     try:
         datasets_dir = Path(settings.PROJECT_ROOT, args.output_dir)
@@ -225,5 +221,9 @@ if __name__ == "__main__":
         torch.save(train, datasets_dir / 'training_dataset.pt')
         torch.save(val, datasets_dir / 'validation_dataset.pt')
         torch.save(test, datasets_dir / 'test_dataset.pt')
+        logger.info(f"TFT datasets saved to {datasets_dir}: \n\
+                    \rTraining: {datasets_dir / 'training_dataset.pt'}\n\
+                    \rValidation: {datasets_dir / 'validation_dataset.pt'}\n\
+                    \rTest: {datasets_dir / 'test_dataset.pt'}")
     except Exception as e:
         raise Exception(f"Error while saving TFT datasets: {e}")

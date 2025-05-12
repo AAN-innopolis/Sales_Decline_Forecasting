@@ -114,17 +114,12 @@ with TaskGroup(group_id='model_features_preparation', dag=dag) as model_features
                 bash_command=f'python {DAG_TASKS_DIR}/prepare_tft_features.py --log-level INFO',
                 dag=dag
             )
-            encode_tft_features = BashOperator(
-                task_id='encode_tft_features',
-                bash_command=f'python {DAG_TASKS_DIR}/encode_tft_features.py --log-level INFO',
-                dag=dag
-            )
             construct_tft_dataset = BashOperator(
                 task_id='construct_tft_dataset',
                 bash_command=f'python {DAG_TASKS_DIR}/construct_tft_dataset.py --log-level INFO',
                 dag=dag
             )
-            prepare_tft_features >> encode_tft_features >> construct_tft_dataset
+            prepare_tft_features >> construct_tft_dataset
         
     
     with TaskGroup(group_id='llm_features', dag=dag) as llm_features:
