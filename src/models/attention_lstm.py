@@ -96,13 +96,7 @@ class HybridLSTMAttn(nn.Module):
         
         lstm_out, _ = self.lstm(x)  # (batch_size, seq_len, lstm_hidden)
         
-        # Создаем маску внимания для батчевых данных
-        if attention_mask is None:
-            # Если маска не предоставлена, создаем маску, которая позволяет видеть все элементы
-            attention_mask = torch.ones(batch_size, self.seq_len, device=x.device)
-        
-        # Преобразуем маску в правильный формат для MultiheadAttention
-        key_padding_mask = ~attention_mask.bool()  # (batch_size, seq_len)
+        key_padding_mask = (x == -1).all(dim=-1)
         
         attn_out, _ = self.attention(
             lstm_out, lstm_out, lstm_out,
