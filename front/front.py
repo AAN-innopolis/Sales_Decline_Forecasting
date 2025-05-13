@@ -8,13 +8,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.models.train_chronos import AutoGluonForecaster, FeaturePreprocessorChronos
-
+from src.airflow.dag_tasks.data_preparation.llm.run_query import LLMForecaster
 
 # ==========CHRONOS-RELATED-STUFF=================
 
 MODEL_PATH = "models/chronos/AutogluonModels_SazeracSales" 
 PREPROCESSOR_PATH = "models/chronos/feature_preprocessor_chronos.joblib"
 BASE_DATA_PATH = "data/prepared/tft_features.parquet"
+LLM_BASE_DATA_PATH = "data/prepared/llm_features.parquet"
 
 @st.cache_resource
 def load_forecaster():
@@ -29,7 +30,17 @@ def load_forecaster():
         st.error(f"Error initializing forecaster: {e}. Ensure paths are correct and model/preprocessor files exist.")
         return None
 
+@st.cache_resource
+def load_llm_df():
+    try:
+        df = pd.read_parquet(LLM_BASE_DATA_PATH)
+        return df
+    except Exception as e:
+        st.error(f"Error reading llm dataset: {e}. Ensure paths are correct and files exist.")
+        return None
+
 forecaster = load_forecaster()
+llm_df = load_llm_df()
 AVAILABLE_STORES = forecaster.get_available_stores() if forecaster else ["Error: Model not loaded"]
 
 # ==========CHRONOS-RELATED-STUFF=================
@@ -47,9 +58,34 @@ def predict_tft(store: str, date: pd.Timestamp, days: int) -> pd.Series:
 
 
 def predict_llm(store: str, date: pd.Timestamp, days: int) -> pd.Series:
-    # TODO: integrate your LLM-based forecaster
-    return pd.Series([None] * days,
-                     index=pd.date_range(start=date + pd.Timedelta(days=1), periods=days))
+    try:
+        llm_forecaster = LLMForecaster()
+        
+        prompts = llm_forecaster.generate_prompts(
+            df=llm_df,
+            store_id=int(store),
+            last_date=date.strftime("%Y-%m-%d"),
+            prediction_horizon=days
+        )
+        if not prompts:
+            raise ValueError(f"No prompts generated for store {store}.")
+        
+        prompt_content = prompts[0].get("content", "")
+        
+        llm_response = llm_forecaster.query_llm(prompt_content)
+        
+        predictions = llm_forecaster.process_prediction(
+            prediction=llm_response,
+            start_date=date,
+            days=days
+        )
+        return predictions
+    except Exception as e:
+        st.error(f"LLM prediction failed: {str(e)}")
+        return pd.Series(
+            [None] * days,
+            index=pd.date_range(start=date + pd.Timedelta(days=1), periods=days)
+        )
 
 def predict_chronos(store: str, date: pd.Timestamp, days: int) -> pd.Series:
     try:
