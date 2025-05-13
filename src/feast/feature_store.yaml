@@ -1,9 +1,0 @@
-project: sales_decline_forecasting
-registry: db/registry.db
-provider: local
-online_store:
-  type: sqlite
-  path: db/online_store.db
-offline_store:
-  type: file
-entity_key_serialization_version: 2
