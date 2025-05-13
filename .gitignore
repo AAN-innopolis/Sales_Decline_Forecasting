@@ -185,3 +185,5 @@ cython_debug/
 src/airflow/logs/child_process/latest
 
 uv.lock
+
+models/chronos/
