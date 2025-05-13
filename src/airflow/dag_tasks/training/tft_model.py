@@ -38,15 +38,23 @@ def load_datasets(
         Test dataset can be None if not found.
     """
     logger.info(f"Loading datasets from {data_dir}...")
+    original_load = torch.load
+    def safe_load(*args, **kwargs):
+        kwargs['weights_only'] = False
+        return original_load(*args, **kwargs)
 
+    torch.load = safe_load
+    train_dataset = None
+    val_dataset = None
+    test_dataset = None    
     try:
-        # Load datasets and dataloaders
         train_dataset = TimeSeriesDataSet.load(data_dir / 'training_dataset.tsd')
         val_dataset = TimeSeriesDataSet.load(data_dir / 'validation_dataset.tsd')
         test_dataset = TimeSeriesDataSet.load(data_dir / 'test_dataset.tsd')
-    except e:
-        logger.info(f"Failed to load datasets")
-
+    except Exception as e:
+        logger.info(f"Failed to load datasets: {e}")
+    finally:
+        torch.load = original_load
 
     return train_dataset, val_dataset, test_dataset
 
@@ -69,7 +77,6 @@ def train_tft_model(
     gradient_clip_algorithm: str = "norm",
     use_swa: bool = False,
     swa_learning_rate: float = 0.05,
-    use_onecycle: bool = False,
     ckpt_path: str = None
 ) -> None:
     """
@@ -93,17 +100,9 @@ def train_tft_model(
         gradient_clip_algorithm: Gradient clipping algorithm ("norm" or "value").
         use_swa: Whether to use Stochastic Weight Averaging.
         swa_learning_rate: Learning rate for SWA.
-        use_onecycle: Whether to use OneCycleLR learning rate scheduler.
         ckpt_path: Path to checkpoint to resume training from.
     """
     logger.info("Starting TFT model training...")
-
-    train_dataloader = training_dataset.to_dataloader(
-        train=True, batch_size=args.batch_size, num_workers=args.num_workers
-    )
-    val_dataloader = validation_dataset.to_dataloader(
-        train=False, batch_size=args.batch_size, num_workers=args.num_workers
-    )
 
     early_stop_callback = EarlyStopping(
         monitor="val_loss", 
@@ -148,23 +147,6 @@ def train_tft_model(
     )
     logger.info(f"Temporal Fusion Transformer model initialized:")
 
-    lr_scheduler_config = None
-    # if use_onecycle:
-    #     logger.info("Using OneCycleLR scheduler.")
-    #     steps_per_epoch = len(training_dataset) // args.batch_size
-    #     lr_scheduler_config = {
-    #         "scheduler": torch.optim.lr_scheduler.OneCycleLR,
-    #         "interval": "step",
-    #         "frequency": 1,
-    #         "monitor": "val_loss",
-    #         "scheduler_args": {
-    #             "max_lr": learning_rate,
-    #             "steps_per_epoch": steps_per_epoch,
-    #             "epochs": max_epochs,
-    #             "anneal_strategy": "cos",
-    #         },
-    #     }
-
     trainer = L.Trainer(
         max_epochs=max_epochs,
         accelerator='gpu' if gpus > 0 else 'cpu',
@@ -182,37 +164,15 @@ def train_tft_model(
     )
 
     logger.info("Training the model...")
-    # if use_onecycle and lr_scheduler_config is not None:
-    #     optimizer = tft_model.configure_optimizers()[0]
-    #     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-    #         optimizer,
-    #         max_lr=learning_rate,
-    #         steps_per_epoch=steps_per_epoch,
-    #         epochs=max_epochs,
-    #         anneal_strategy="cos"
-    #     )
-    #     trainer.fit(
-    #         tft_model,
-    #         train_dataloaders=train_dataloader,
-    #         val_dataloaders=val_dataloader,
-    #         ckpt_path=ckpt_path
-    #     )
-    # else:
     trainer.fit(
         tft_model,
         train_dataloaders=training_dataset.to_dataloader(train=True, batch_size=args.batch_size, num_workers=args.num_workers),
         val_dataloaders=validation_dataset.to_dataloader(train=False, batch_size=args.batch_size, num_workers=args.num_workers),
         ckpt_path=ckpt_path
     )
-
-    # best_model_path = trainer.checkpoint_callback.best_model_path
-    # logger.info(f"Best model path: {best_model_path}")
-    # best_tft_model = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
-
     final_model_save_path = model_output_dir / "best_tft_model.ckpt"
     trainer.save_checkpoint(final_model_save_path)
     logger.info(f"Best model saved to {final_model_save_path}")
-
     logger.info("TFT model training completed.")
 
 
@@ -257,7 +217,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--precision", 
         type=str, 
-        default="16-mixed",
+        default="32-true",
         choices=["32-true", "16-mixed", "bf16-mixed", "64-true"],
         help="Training precision (e.g., 32-true, 16-mixed, bf16-mixed)."
     )
@@ -314,11 +274,6 @@ if __name__ == "__main__":
         help="Learning rate for SWA scheduler. Default is 0.05."
     )
     parser.add_argument(
-        "--use-onecycle",
-        action="store_true",
-        help="Use OneCycleLR learning rate scheduler."
-    )
-    parser.add_argument(
         "--ckpt-path",
         type=str,
         default=None,
@@ -326,7 +281,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    
     if args.deterministic:
         seed_everything(args.seed, workers=True)
 
@@ -424,7 +378,6 @@ if __name__ == "__main__":
             gradient_clip_algorithm=args.gradient_clip_algorithm,
             use_swa=args.use_swa,
             swa_learning_rate=args.swa_learning_rate,
-            use_onecycle=args.use_onecycle,
             ckpt_path=args.ckpt_path
         )
     except FileNotFoundError:
@@ -433,3 +386,4 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f"An unexpected error occurred: {e}", exc_info=True)
         sys.exit(1) 
+        
