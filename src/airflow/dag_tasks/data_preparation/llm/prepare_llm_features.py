@@ -14,12 +14,10 @@ import json
 sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
 from src.utils.data_utils import setup_logger
-from features.static_features import (
-    get_item_details,
+from src.features.transaction_aggregation_features import get_item_details, get_base_statistics
+from src.features.static_features import (
     get_holiday_features,
     get_store_attributes,
-    get_base_statistics,
-    get_store_features
 )
 from src.config.configs import settings
 
