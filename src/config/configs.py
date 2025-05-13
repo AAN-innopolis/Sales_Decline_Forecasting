@@ -80,7 +80,7 @@ class Settings(BaseSettings):
         "zipcode", 
         "county",
     ]
-    STATIC_NUM = [
+    STATIC_NUM: List[str] = [
         "lon", "lat",
     ]
 
