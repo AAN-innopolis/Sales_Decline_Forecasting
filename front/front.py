@@ -1,13 +1,20 @@
+import os
+import torch
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from src.models.train_chronos import AutoGluonForecaster
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.models.train_chronos import AutoGluonForecaster, FeaturePreprocessorChronos
+
 
 # ==========CHRONOS-RELATED-STUFF=================
 
-MODEL_PATH = "../models/chronos/AutogluonModels_SazeracSales" 
-PREPROCESSOR_PATH = "../models/chronos/feature_preprocessor_chronos.joblib"
-BASE_DATA_PATH = "data/sazerac_sales_prepared.parquet"
+MODEL_PATH = "models/chronos/AutogluonModels_SazeracSales" 
+PREPROCESSOR_PATH = "models/chronos/feature_preprocessor_chronos.joblib"
+BASE_DATA_PATH = "data/prepared/tft_features.parquet"
 
 @st.cache_resource
 def load_forecaster():
@@ -55,7 +62,7 @@ def predict_chronos(store: str, date: pd.Timestamp, days: int) -> pd.Series:
 # Streamlit App Layout
 # ===========================
 
-st.set_page_config(layout="wide")
+# st.set_page_config(layout="wide")
 st.title("Time Series Forecast Dashboard")
 
 col1, col2, col3 = st.columns([1, 2, 1])
@@ -63,7 +70,7 @@ col1, col2, col3 = st.columns([1, 2, 1])
 with col1:
     st.header("Configuration")
     model_option = st.selectbox("Model:", ["LSTM", "TFT", "LLM", "CHRONOS"])
-    stores = ["Store A", "Store B", "Store C"]  # TODO: replace with your store list
+    stores = AVAILABLE_STORES[:10]  # TODO: replace with your store list
     store = st.selectbox("Store:", stores)
     date = st.date_input("Last known date:", value=pd.to_datetime("2025-01-01"))
     days = st.selectbox("Forecast horizon (days):", [30], index=0)
@@ -81,6 +88,7 @@ with col2:
         else:
             preds = predict_llm(store, pd.to_datetime(date), days)
 
+        # TODO: complete real 
         real = pd.Series([None] * days,
                          index=pd.date_range(end=pd.to_datetime(date), periods=days))
 

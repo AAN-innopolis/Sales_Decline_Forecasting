@@ -6,7 +6,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 AIRFLOW_PORT=8080
-MLFLOW_PORT=5000
+TENSORBOARD_PORT=6006
 FEAST_PORT=8888
 
 print_message() {
@@ -60,52 +60,16 @@ start_airflow() {
         2>| ${AIRFLOW_HOME}/logs/triggerer/triggerer.err < /dev/null &
 }
 
-start_mlflow() {
-    print_message "Starting MLflow tracking server..."
-    MLFLOW_HOME="./src/mlflow"
-    mkdir -p ${MLFLOW_HOME}/artifacts
-    mkdir -p ${MLFLOW_HOME}/db
-    mkdir -p ${MLFLOW_HOME}/logs
+start_tensorboard() {
+    print_message "Starting Tensorboard tracking server..."
+    TENSORBOARD_HOME="./src/tensorboard"
+    mkdir -p ${TENSORBOARD_HOME}/
+    mkdir -p ${TENSORBOARD_HOME}/logs
     
-    uv run nohup mlflow server \
-        --backend-store-uri sqlite:///${MLFLOW_HOME}/db/mlflow.db \
-        --default-artifact-root ${MLFLOW_HOME}/artifacts \
+    uv run tensorboard \
+        --logdir ${TENSORBOARD_HOME} 
         --host 0.0.0.0 \
-        --port ${MLFLOW_PORT} \
-        --workers 4 \
-        >| ${MLFLOW_HOME}/logs/mlflow.log \
-        2>| ${MLFLOW_HOME}/logs/mlflow.err < /dev/null &
-}
-
-start_feast() {
-    print_message "Starting Feast feature server..."
-    FEAST_HOME="$(pwd)/src/feast"
-    FEAST_CONFIG="${FEAST_HOME}/feature_store.yaml"
-
-    mkdir -p ${FEAST_HOME}/logs/feast
-    mkdir -p ${FEAST_HOME}/logs/feast_ui
-    mkdir -p ${FEAST_HOME}/db
-
-    cd ${FEAST_HOME}
-    uv run nohup feast -f ${FEAST_CONFIG} serve \
-        >| ${FEAST_HOME}/logs/feast/feast.log \
-        2>| ${FEAST_HOME}/logs/feast/feast.err < /dev/null &
-    uv run nohup feast -f ${FEAST_CONFIG} ui -p ${FEAST_PORT} \
-        >| ${FEAST_HOME}/logs/feast_ui/feast_ui.log \
-        2>| ${FEAST_HOME}/logs/feast_ui/feast_ui.err < /dev/null &
-    cd - > /dev/null
-}
-
-start_redis() {
-    print_message "Starting Redis server..."
-    REDIS_HOME="$(pwd)/src/redis"
-    mkdir -p ${REDIS_HOME}/data
-    mkdir -p ${REDIS_HOME}/logs
-    
-    redis-server --dir ${REDIS_HOME}/data \
-        --logfile ${REDIS_HOME}/logs/redis.log \
-        --daemonize yes < /dev/null &
-    print_message "Redis server started."
+        --port ${TENSORBOARD_PORT} &
 }
 
 start_tunnels() {
@@ -115,22 +79,17 @@ start_tunnels() {
     print_message "Airflow:"
     lt --port ${AIRFLOW_PORT} &
     sleep 10
-    print_message "MLflow:"
-    lt --port ${MLFLOW_PORT} &
+    print_message "Tensorboard:"
+    lt --port ${TENSORBOARD_PORT} &
     sleep 10
-    print_message "Feast:"
-    lt --port ${FEAST_PORT} &
-    sleep 50
     print_message "Tunnels started."
 }
 
 start_all() {
     print_message "Starting all services locally..."
-    start_redis
     start_airflow
-    start_mlflow
-    start_feast
-    start_tunnels
+    start_tensorboard
+    # start_tunnels
     print_message "All services started."
 }
 
@@ -139,28 +98,15 @@ stop_airflow() {
     pkill -f "airflow"
 }
 
-stop_mlflow() {
-    print_message "Stopping MLflow service..."
-    pkill -f "mlflow"
-    pkill -f "gunicorn"
-}
-
-stop_feast() {
-    print_message "Stopping Feast service..."
-    pkill -f "feast"
-}
-
-stop_redis() {
-    print_message "Stopping Redis service..."
-    redis-cli shutdown
+stop_tensorboard() {
+    print_message "Stopping Tensorboard service..."
+    pkill -f "tensorboard"
 }
 
 stop_all() {
     print_message "Stopping all services..."
     stop_airflow
-    stop_mlflow
-    stop_feast
-    stop_redis
+    stop_tensorboard
 }
 
 check_status() {
@@ -169,24 +115,16 @@ check_status() {
     ps aux | grep redis-server | grep -v grep
     echo "Airflow processes:"
     ps aux | grep airflow | grep -v grep
-    echo "MLflow processes:"
-    ps aux | grep mlflow | grep -v grep
-    echo "Feast processes:"
-    ps aux | grep feast | grep -v grep
+    echo "Tensorboard processes:"
+    ps aux | grep tensorboard | grep -v grep
 }
 
 case "$1" in
     "start-airflow")
         start_airflow
         ;;
-    "start-mlflow")
-        start_mlflow
-        ;;
-    "start-feast")
-        start_feast
-        ;;
-    "start-redis")
-        start_redis
+    "start-tensorboard")
+        start_tensorboard
         ;;
     "start-all")
         start_all
@@ -194,14 +132,8 @@ case "$1" in
     "stop-airflow")
         stop_airflow
         ;;
-    "stop-mlflow")
-        stop_mlflow
-        ;;
-    "stop-feast")
-        stop_feast
-        ;;
-    "stop-redis")
-        stop_redis
+    "stop-tensorboard")
+        stop_tensorboard
         ;;
     "stop-all")
         stop_all
@@ -210,7 +142,7 @@ case "$1" in
         check_status
         ;;
     *)
-        echo "Usage: $0 {start-airflow|start-mlflow|start-feast|start-redis|start-all|stop-airflow|stop-mlflow|stop-feast|stop-redis|stop-all|status}"
+        echo "Usage: $0 {start-airflow|start-tensorboard|start-all|stop-airflow|stop-redis|stop-all|status}"
         exit 1
         ;;
 esac
