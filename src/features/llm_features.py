@@ -3,16 +3,19 @@ LLM-specific feature engineering module.
 Contains functions for creating features specifically for Large Language Models.
 """
 
+
+import json
+from typing import Optional, Union
 import pandas as pd
 import numpy as np
-import json
-
-
+from datetime import datetime
 
 def prepare_llm_prompts(df: pd.DataFrame, 
                        prediction_horizon: int = 7,
                        include_history: bool = True,
-                       history_window: int = 7) -> list:
+                       history_window: int = 7,
+                       store_id: Optional[int] = None,
+                       last_date: Optional[Union[str, datetime]] = None) -> list:
     """
     Prepare prompts for LLM model with enhanced structure and features.
     
@@ -21,50 +24,62 @@ def prepare_llm_prompts(df: pd.DataFrame,
         prediction_horizon (int): Number of days to predict
         include_history (bool): Whether to include historical context
         history_window (int): Number of historical days to include
-        
+        store_id (int, optional): Specific store ID to process
+        last_date (str/datetime, optional): Specific last date for prediction start
+    
     Returns:
         list: List of prompts for LLM
     """
+    # Filter by store_id if specified
+    if store_id is not None:
+        df = df[df['store'] == store_id]
+        if df.empty:
+            return []
+
+    # Convert last_date to datetime if provided as string
+    last_date_dt = None
+    if last_date is not None:
+        if isinstance(last_date, str):
+            last_date_dt = pd.to_datetime(last_date)
+        else:
+            last_date_dt = last_date
+
     # Create store descriptions
-    store_desc_parts = []
-    store_desc_parts.append("Store {store}")
-    
+    store_desc_parts = ["Store {store}"]
     if 'city' in df.columns and 'county' in df.columns:
         store_desc_parts.append("in {city}, {county} county")
     elif 'city' in df.columns:
         store_desc_parts.append("in {city}")
     elif 'county' in df.columns:
         store_desc_parts.append("in {county} county")
-        
     if 'lon' in df.columns and 'lat' in df.columns:
         store_desc_parts.append("Located at coordinates ({lon:.4f}, {lat:.4f})")
-        
+    
     store_desc_format = ". ".join(store_desc_parts) + "."
     
-    # Create store descriptions
+    # Create dynamic columns
     df['store_description'] = df.apply(
-        lambda x: store_desc_format.format(**{k: v for k, v in x.items() if k in store_desc_format}),
-        axis=1
+        lambda x: store_desc_format.format(**x.to_dict()), axis=1
     )
-    
-    # Create holiday descriptions
+
+    # Holiday descriptions
     if 'is_holiday' in df.columns and 'holiday_name' in df.columns:
         df['holiday_description'] = df.apply(
-            lambda x: f"Date is a holiday ({x['holiday_name']})." if x['is_holiday'] else "Date is not a holiday.",
+            lambda x: f"Date is a holiday ({x['holiday_name']})." if x['is_holiday'] else "", 
             axis=1
         )
     else:
         df['holiday_description'] = ""
-    
-    # Create sales summary
+
+    # Sales summary
     df['sales_summary'] = df.apply(
-        lambda x: f"Sales: ${float(x['purchase_amount']):.2f}, "
+        lambda x: f"Sales: ${x['purchase_amount']:.2f}, "
                 f"Bottles: {int(x['purchased_bottles'])}, "
-                f"Liters: {float(x['purchased_liters']):.2f}.",
+                f"Liters: {x['purchased_liters']:.2f}.", 
         axis=1
     )
-    
-    # Create transaction summary
+
+    # Transaction summary
     transaction_parts = []
     if 'transaction_count' in df.columns:
         transaction_parts.append("Transactions: {transaction_count}")
@@ -72,129 +87,101 @@ def prepare_llm_prompts(df: pd.DataFrame,
         transaction_parts.append("Categories: {unique_categories}")
     if 'unique_items' in df.columns:
         transaction_parts.append("Items: {unique_items}")
-        
+    
+    df['transaction_summary'] = ""
     if transaction_parts:
         transaction_format = ". ".join(transaction_parts) + "."
         df['transaction_summary'] = df.apply(
-            lambda x: transaction_format.format(**{k: int(v) if isinstance(v, np.integer) else v 
-                                                 for k, v in x.items() if k in transaction_format}),
-            axis=1
+            lambda x: transaction_format.format(**x.to_dict()), axis=1
         )
-    else:
-        df['transaction_summary'] = ""
-    
-    # Clean up text columns
-    for col in ['store_description', 'holiday_description', 'sales_summary', 'transaction_summary']:
-        if col in df.columns:
-            df[col] = df[col].str.replace('  ', ' ')
-            df[col] = df[col].str.strip()
-    
+
+    # Clean text columns
+    text_cols = ['store_description', 'holiday_description', 'sales_summary', 'transaction_summary']
+    for col in text_cols:
+        df[col] = df[col].str.replace(r'\s+', ' ', regex=True).str.strip()
+
     prompts = []
-    
     for store in df['store'].unique():
         store_data = df[df['store'] == store].sort_values('date')
         
-        # Get the last date in the data
-        last_date = store_data['date'].max()
-        
-        # Create base prompt with role and context
-        base_prompt = (
-            "###Context###\n"
-            "You are an expert sales forecaster with deep knowledge of retail analytics and time series forecasting. "
-            "Your task is to predict future sales based on historical data and store characteristics.\n\n"
-            
-            "###Store Information###\n"
-            f"{store_data.iloc[-1]['store_description']}\n\n"
-        )
-        
-        # Add item details if available
+        # Date handling
+        if last_date_dt is not None:
+            if store_data['date'].max() < last_date_dt:
+                continue  # Skip if store doesn't have data up to last_date
+            store_data = store_data[store_data['date'] <= last_date_dt]
+            current_last_date = last_date_dt
+        else:
+            current_last_date = store_data['date'].max()
+
+        # Base prompt components
+        base_prompt = f"""###Context###
+You are an expert sales forecaster with deep knowledge of retail analytics and time series forecasting.
+Your task is to predict future sales based on historical data and store characteristics.
+
+###Store Information###
+{store_data.iloc[-1]['store_description']}
+"""
+
+        # Add item details
         if 'item_details' in store_data.columns:
-            item_details = store_data.iloc[-1]['item_details']
-            if pd.notna(item_details).any():
-                base_prompt += "###Product Portfolio###\n"
-                # Group items by category for better organization
+            items = store_data.iloc[-1]['item_details']
+            if pd.notna(items).all() and items:
+                base_prompt += "\n###Product Portfolio###\n"
                 items_by_category = {}
-                for item in item_details:
+                for item in items:
                     category = item.get('category_name', 'Other')
-                    if category not in items_by_category:
-                        items_by_category[category] = []
-                    items_by_category[category].append(item)
+                    items_by_category.setdefault(category, []).append(item)
                 
-                # Add items by category
-                for category, items in items_by_category.items():
-                    base_prompt += f"\n{category}:\n"
-                    for item in items:
-                        base_prompt += (
-                            f"- {item.get('im_desc', 'Unknown')}\n"
-                            f"  * Pack Size: {int(item.get('pack', 'N/A'))} units\n"
-                            f"  * Volume: {int(item.get('bottle_volume_ml', 'N/A'))}ml\n"
-                            f"  * Cost: ${float(item.get('state_bottle_cost', 'N/A')):.2f}\n"
-                            f"  * Retail: ${float(item.get('state_bottle_retail', 'N/A')):.2f}\n"
-                            f"  * Sales: {int(item.get('sale_bottles', 'N/A'))} bottles (${float(item.get('sale_dollars', 'N/A')):.2f})\n"
-                        )
-                base_prompt += "\n"
-        
-        # Add historical context if requested
+                for cat, cat_items in items_by_category.items():
+                    base_prompt += f"\n{cat}:\n"
+                    for item in cat_items:
+                        base_prompt += (f"- {item.get('im_desc', 'Unknown')}\n"
+                                      f"  * Pack Size: {item.get('pack', 'N/A')} units\n"
+                                      f"  * Volume: {item.get('bottle_volume_ml', 'N/A')}ml\n")
+
+        # Historical data
         if include_history:
             history = store_data.tail(history_window)
-            base_prompt += "###Historical Sales Data###\n"
-            
+            base_prompt += "\n###Historical Sales Data###\n"
             for _, row in history.iterrows():
-                base_prompt += (
-                    f"\nDate: {row['date'].strftime('%Y-%m-%d')}\n"
-                    f"- Total Sales: ${float(row['purchase_amount']):.2f}\n"
-                    f"- Bottles Sold: {int(row['purchased_bottles'])}\n"
-                    f"- Volume Sold: {float(row['purchased_liters']):.2f} liters\n"
-                )
-                
-                if pd.notna(row['holiday_description']):
-                    base_prompt += f"- {row['holiday_description']}\n"
-                
-                if 'transaction_count' in row and pd.notna(row['transaction_count']):
-                    base_prompt += f"- Transactions: {int(row['transaction_count'])}\n"
-            
-            base_prompt += "\n"
-        
-        # Add prediction request with specific format
-        prediction_prompt = (
-            "###Task###\n"
-            f"Predict sales for the next {prediction_horizon} days starting from {last_date.strftime('%Y-%m-%d')}.\n\n"
-            
-            "###Requirements###\n"
-            "1. Consider historical patterns, holidays, and store characteristics\n"
-            "2. Account for weekly and seasonal trends\n"
-            "3. Consider product portfolio and category mix\n"
-            "4. Provide confidence intervals for your predictions\n\n"
-            
-            "###Output Format###\n"
-            "Provide your predictions in the following JSON format:\n"
-            "{\n"
-            '  "predictions": [\n'
-            '    {\n'
-            '      "date": "YYYY-MM-DD",\n'
-            '      "predicted_sales": XXX.XX,\n'
-            '      "predicted_bottles": XXX,\n'
-            '      "confidence_lower": XXX.XX,\n'
-            '      "confidence_upper": XXX.XX,\n'
-            '      "explanation": "Brief explanation of the prediction"\n'
-            '    },\n'
-            '    ...\n'
-            '  ],\n'
-            '  "overall_trend": "Description of the overall trend",\n'
-            '  "key_factors": ["Factor 1", "Factor 2", ...],\n'
-            '  "category_insights": {\n'
-            '    "category_name": "Trend and insights for this category"\n'
-            '  }\n'
-            "}\n"
-        )
-        
+                hist_entry = (f"\nDate: {row['date'].strftime('%Y-%m-%d')}\n"
+                             f"- Total Sales: ${row['purchase_amount']:.2f}\n"
+                             f"- Bottles Sold: {int(row['purchased_bottles'])}\n")
+                if row['holiday_description']:
+                    hist_entry += f"- {row['holiday_description']}\n"
+                base_prompt += hist_entry
+
+        # Prediction task
+        prediction_prompt = f"""
+###Task###
+Predict sales for the next {prediction_horizon} days starting from {current_last_date.strftime('%Y-%m-%d')}.
+
+###Requirements###
+1. Consider historical patterns, holidays, and store characteristics
+2. Account for weekly and seasonal trends
+3. Provide confidence intervals for predictions
+
+###Output Format###
+{{
+  "predictions": [
+    {{
+      "date": "YYYY-MM-DD",
+      "predicted_sales": XXX.XX,
+      "confidence_lower": XXX.XX,
+      "confidence_upper": XXX.XX,
+      "reasoning": "Brief explanation"
+    }}
+  ],
+  "key_factors": ["Factor1", "Factor2"]
+}}"""
+
         prompts.append({
             "store_id": int(store),
             "prompt": base_prompt + prediction_prompt,
-            "last_date": last_date.strftime('%Y-%m-%d'),
-            "prediction_horizon": int(prediction_horizon)
+            "prediction_start": current_last_date.strftime('%Y-%m-%d'),
+            "horizon": prediction_horizon
         })
-    
+
     return prompts
 
 def parse_llm_response(response: str) -> dict:
