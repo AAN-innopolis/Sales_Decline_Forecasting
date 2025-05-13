@@ -34,5 +34,6 @@ dependencies = [
     "celery>=5.5.2",
     "flask-appbuilder>=4.6.3",
     "sodapy>=2.2.0",
+    "tensorboard>=2.19.0",
 ]
  
