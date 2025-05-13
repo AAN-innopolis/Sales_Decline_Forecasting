@@ -8,7 +8,11 @@ from pathlib import Path
 import sys
 import torch
 import lightning as L
-from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor, StochasticWeightAveraging
+from lightning.pytorch.callbacks import (
+    EarlyStopping, 
+    LearningRateMonitor, 
+    StochasticWeightAveraging
+)
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch import seed_everything
 from lightning.pytorch.tuner import Tuner
@@ -17,7 +21,6 @@ from pytorch_forecasting.metrics import QuantileLoss
 import torch.optim.lr_scheduler as lr_scheduler
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
-
 from src.utils.data_utils import setup_logger
 from src.config.configs import settings
 
@@ -202,8 +205,8 @@ if __name__ == "__main__":
         default="INFO", 
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     )
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch size for training.")
-    parser.add_argument("--num-workers", type=int, default=4, help="Number of workers for DataLoader.")
+    parser.add_argument("--batch-size", type=int, default=256, help="Batch size for training.")
+    parser.add_argument("--num-workers", type=int, default=8, help="Number of workers for DataLoader.")
     parser.add_argument("--hidden-size", type=int, default=32, help="Hidden size of network layers.")
     parser.add_argument("--lstm-layers", type=int, default=2, help="Number of LSTM layers.")
     parser.add_argument("--num-heads", type=int, default=4, help="Number of attention heads.")
@@ -213,7 +216,6 @@ if __name__ == "__main__":
     parser.add_argument("--max-epochs", type=int, default=100, help="Maximum number of training epochs.")
     parser.add_argument("--gpus", type=int, default=1 if torch.cuda.is_available() else 0, help="Number of GPUs to use (0 for CPU).")
     parser.add_argument("--gradient-clip-val", type=float, default=0.1, help="Gradient clipping value.")
-
     parser.add_argument(
         "--precision", 
         type=str, 
@@ -279,13 +281,11 @@ if __name__ == "__main__":
         default=None,
         help="Path to checkpoint to resume training from."
     )
-
     args = parser.parse_args()
     if args.deterministic:
         seed_everything(args.seed, workers=True)
 
     logger = setup_logger(name=__name__, level=args.log_level.upper())
-
     data_dir = Path(args.data_dir)
     model_output_dir = Path(args.model_output_dir)
     log_dir = Path(args.log_dir)
@@ -386,4 +386,3 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f"An unexpected error occurred: {e}", exc_info=True)
         sys.exit(1) 
-        
