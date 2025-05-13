@@ -89,84 +89,87 @@ def get_store_features(
         pd.DataFrame: Store-specific features for each store-date combination
     """
     logger.info("Creating features related to stores")
-    df = df_original.copy()
+    df = df_original[[
+        'store','date',
+        'city','county',
+        'purchase_amount','transaction_count','unique_items'
+    ]].copy()
    
     q33, q66 = (
         df.groupby('date')['purchase_amount']
         .median()
         .expanding()
         .quantile(0.33)
-        .shift(1)
     ).rename('q33'), (
         df.groupby('date')['purchase_amount']
         .median()
         .expanding()
         .quantile(0.66)
-        .shift(1)
     ).rename('q66')
     global_sales_quantiles = pd.concat([q33, q66], axis=1)
     city_means = (
         df.groupby(['city','date'])['purchase_amount'].median()
         .expanding()
-        .mean()
-        .shift(1)
+        .median()
     )
     county_means = (
         df.groupby(['county', 'date'])['purchase_amount'].median()
         .expanding()
-        .mean()
-        .shift(1)
+        .median()
     )
 
     store_dfs = []
     for _, store in df.groupby('store'):
-        store_df = pd.DataFrame( 
-            {'store': store['store'].values},
-            index=store['date']
-        )
-        store_df['store_avg_sales'] = (
+        store = store.set_index('date')
+        store['store_avg_sales'] = (
             store['purchase_amount']
-            .expanding(min_periods=1)
+            .expanding()
             .median()
-            .shift(1)
         )
-        store_df['store_avg_transactions'] = (
+        store['store_avg_transactions'] = (
             store['transaction_count']
-            .expanding(min_periods=1)
-            .mean()
-            .shift(1)
+            .expanding()
+            .median()
         )
-        store_df['store_avg_items'] = (
+        store['store_avg_items'] = (
             store['unique_items']
-            .expanding(min_periods=1)
-            .mean()
-            .shift(1)
+            .expanding()
+            .median()
         )
         # Get historical quantiles for store classification
         # Get quantiles for the current store's dates
-        current_quantiles = global_sales_quantiles.loc[store_df.index]
-        store_df['store_size'] = 1  # Small store by default
-        
+        current_quantiles = global_sales_quantiles.loc[store.index]
+        store['store_size'] = 1  # Small store by default
         # Classify store size based on historical performance
-        store_df.loc[store_df['store_avg_sales'] > current_quantiles['q66'], 'store_size'] = 3  # Large store
-        store_df.loc[store_df['store_avg_sales'] > current_quantiles['q33'], 'store_size'] = 2  # Medium store
+        store.loc[
+            store['store_avg_sales'] > current_quantiles['q66'], 
+            'store_size'
+        ] = 3  # Large store
+        store.loc[
+            store['store_avg_sales'] > current_quantiles['q33'], 
+            'store_size'
+        ] = 2  # Medium store
         
         # Get city and county historical averages
         current_city = store['city'].iloc[0]
         current_county = store['county'].iloc[0]
-        store_df['city_avg_sales'] = city_means.loc[current_city].loc[store_df.index]
-        store_df['county_avg_sales'] = county_means.loc[current_county].loc[store_df.index]
-        
+        store['city_avg_sales'] = city_means.loc[current_city].loc[store.index]
+        store['county_avg_sales'] = county_means.loc[current_county].loc[store.index]
         # Calculate ratios using historical averages
-        store_df['store_to_city_sales_ratio'] = (
-            store_df['store_avg_sales'] / 
-            store_df['city_avg_sales'].replace(0, np.nan)
+        store['store_to_city_sales_ratio'] = (
+            store['store_avg_sales'] / 
+            store['city_avg_sales']
         )
-        store_df['store_to_county_sales_ratio'] = (
-            store_df['store_avg_sales'] / 
-            store_df['county_avg_sales'].replace(0, np.nan)
+        store['store_to_county_sales_ratio'] = (
+            store['store_avg_sales'] / 
+            store['county_avg_sales']
         )
-        store_dfs.append(store_df.set_index('store', append=True))
+        store_dfs.append(store[[
+            'store_avg_sales', 'store_avg_transactions', 'store_avg_items', 
+            'store_size', 'store',
+            'city_avg_sales', 'county_avg_sales', 
+            'store_to_city_sales_ratio', 'store_to_county_sales_ratio'
+        ]].set_index('store', append=True))
         
     store_dfs = pd.concat(store_dfs).reset_index()
     logger.info(f"Store features created. \n\

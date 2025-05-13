@@ -9,13 +9,13 @@ import sys
 import logging
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
-from src.features.temporal_features import create_rolling_features
+from src.features.temporal_features import get_rolling_features
 from src.utils.data_utils import setup_logger
 from src.features.static_features import (
     get_holiday_features,
-    get_store_attributes, 
-    get_store_features
+    get_store_attributes,
 )
+from src.features.store_date_features import get_store_features
 from src.config.configs import settings
 
 
@@ -53,7 +53,7 @@ def prepare_tft_data(
         )
     )
     df_store_features = get_store_features(df_res, logger)
-    df_rolling = create_rolling_features(df, logger) 
+    df_rolling = get_rolling_features(df, logger) 
 
     df_res = (df_res
         .merge(
@@ -66,6 +66,12 @@ def prepare_tft_data(
             how='left'
         )
     )
+    df_res['time_idx'] = df_res.groupby('store').cumcount()
+
+    for col in df_res.columns:
+        if df_res[col].isna().any():
+            logger.warning(f"Column {col} has NaN values: {df_res[col].isna().sum()}")
+            df_res[col] = df_res[col].fillna(-1)
 
     logger.info(f"Final data shape: {df_res.shape}")
     return df_res
