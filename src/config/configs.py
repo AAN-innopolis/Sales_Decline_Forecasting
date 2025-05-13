@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 
     ### BUSINESS RULES
+    #### TRANSACTIONS DATASET ####
     PRIMARY_KEYS: List[str] = [
         'invoice_line_no',
     ]
@@ -52,13 +53,13 @@ class Settings(BaseSettings):
     ]
     CATEGORICAL_COLUMNS: List[str] = [
         'category_name',
+        'name',
         'address',
         'city',
         'county', 
         'im_desc',
         'store_location',
     ]
-
     ### LLM FEATURE
     ITEM_DETAILS_COLUMNS: List[str] = [
         'category_name', 
@@ -70,6 +71,17 @@ class Settings(BaseSettings):
         'sale_dollars',
         'sale_bottles',
         'sale_liters',
+    ]
+    ##### AGGREGATED DATASET #####
+    STATIC_CATEGORIES: List[str] = [
+        "name", 
+        "address", 
+        "city", 
+        "zipcode", 
+        "county",
+    ]
+    STATIC_NUM = [
+        "lon", "lat",
     ]
 
     ### LAGS AND ROLLING FEATURES

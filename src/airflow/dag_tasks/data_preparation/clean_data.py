@@ -28,7 +28,7 @@ if __name__ == "__main__":
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], 
                         default='INFO',
                         help='The logging level')
-    parser.add_argument('--min-stores-count', type=int, default=5,
+    parser.add_argument('--min-stores-count', type=int, default=30,
                         help='The minimum number of transactions for a store to be included')
     parser.add_argument('--max-days-between-purchases', type=int, default=200,
                         help='The maximum number of days between purchases for a store to be included')
