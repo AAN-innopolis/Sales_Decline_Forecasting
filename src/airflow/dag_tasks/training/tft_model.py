@@ -38,28 +38,17 @@ def load_datasets(
         Test dataset can be None if not found.
     """
     logger.info(f"Loading datasets from {data_dir}...")
+
     try:
-        training_dataset = torch.load(data_dir / "training_dataset.pt", weights_only=False)
-        logger.info("Training dataset loaded.")
-    except FileNotFoundError:
-        logger.error(f"Training dataset not found in {data_dir}.")
-        raise
-    
-    try:
-        validation_dataset = torch.load(data_dir / "validation_dataset.pt", weights_only=False)
-        logger.info("Validation dataset loaded.")
-    except FileNotFoundError:
-        logger.error(f"Validation dataset not found in {data_dir}.")
-        raise
-        
-    try:
-        test_dataset = torch.load(data_dir / "test_dataset.pt", weights_only=False)
-        logger.info("Test dataset loaded.")
-    except FileNotFoundError:
-        logger.error(f"Test dataset not found in {data_dir}.")
-        raise
-        
-    return training_dataset, validation_dataset, test_dataset
+        # Load datasets and dataloaders
+        train_dataset = TimeSeriesDataSet.load(data_dir / 'training_dataset.tsd')
+        val_dataset = TimeSeriesDataSet.load(data_dir / 'validation_dataset.tsd')
+        test_dataset = TimeSeriesDataSet.load(data_dir / 'test_dataset.tsd')
+    except e:
+        logger.info(f"Failed to load datasets")
+
+
+    return train_dataset, val_dataset, test_dataset
 
 
 def train_tft_model(
@@ -69,12 +58,12 @@ def train_tft_model(
     log_dir: Path,
     logger: logging.Logger,
     hidden_size: int = 32,
-    lstm_layers: int = 2,
-    num_heads: int = 4,
+    lstm_layers: int = 1,
+    num_heads: int = 2,
     dropout: float = 0.1,
-    learning_rate: float = 1e-3,
-    patience: int = 10,
-    max_epochs: int = 100,
+    learning_rate: float = 0.03,
+    patience: int = 5,
+    max_epochs: int = 20,
     gpus: int = 1 if torch.cuda.is_available() else 0,
     gradient_clip_val: float = 0.1,
     gradient_clip_algorithm: str = "norm",
@@ -160,21 +149,21 @@ def train_tft_model(
     logger.info(f"Temporal Fusion Transformer model initialized:")
 
     lr_scheduler_config = None
-    if use_onecycle:
-        logger.info("Using OneCycleLR scheduler.")
-        steps_per_epoch = len(training_dataset) // args.batch_size
-        lr_scheduler_config = {
-            "scheduler": torch.optim.lr_scheduler.OneCycleLR,
-            "interval": "step",
-            "frequency": 1,
-            "monitor": "val_loss",
-            "scheduler_args": {
-                "max_lr": learning_rate,
-                "steps_per_epoch": steps_per_epoch,
-                "epochs": max_epochs,
-                "anneal_strategy": "cos",
-            },
-        }
+    # if use_onecycle:
+    #     logger.info("Using OneCycleLR scheduler.")
+    #     steps_per_epoch = len(training_dataset) // args.batch_size
+    #     lr_scheduler_config = {
+    #         "scheduler": torch.optim.lr_scheduler.OneCycleLR,
+    #         "interval": "step",
+    #         "frequency": 1,
+    #         "monitor": "val_loss",
+    #         "scheduler_args": {
+    #             "max_lr": learning_rate,
+    #             "steps_per_epoch": steps_per_epoch,
+    #             "epochs": max_epochs,
+    #             "anneal_strategy": "cos",
+    #         },
+    #     }
 
     trainer = L.Trainer(
         max_epochs=max_epochs,
@@ -193,33 +182,33 @@ def train_tft_model(
     )
 
     logger.info("Training the model...")
-    if use_onecycle and lr_scheduler_config is not None:
-        optimizer = tft_model.configure_optimizers()[0]
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            optimizer,
-            max_lr=learning_rate,
-            steps_per_epoch=steps_per_epoch,
-            epochs=max_epochs,
-            anneal_strategy="cos"
-        )
-        trainer.fit(
-            tft_model,
-            train_dataloaders=train_dataloader,
-            val_dataloaders=val_dataloader,
-            ckpt_path=ckpt_path
-        )
-    else:
-        trainer.fit(
-            tft_model,
-            train_dataloaders=training_dataset.to_dataloader(train=True, batch_size=args.batch_size, num_workers=args.num_workers),
-            val_dataloaders=validation_dataset.to_dataloader(train=False, batch_size=args.batch_size, num_workers=args.num_workers),
-            ckpt_path=ckpt_path
-        )
+    # if use_onecycle and lr_scheduler_config is not None:
+    #     optimizer = tft_model.configure_optimizers()[0]
+    #     scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    #         optimizer,
+    #         max_lr=learning_rate,
+    #         steps_per_epoch=steps_per_epoch,
+    #         epochs=max_epochs,
+    #         anneal_strategy="cos"
+    #     )
+    #     trainer.fit(
+    #         tft_model,
+    #         train_dataloaders=train_dataloader,
+    #         val_dataloaders=val_dataloader,
+    #         ckpt_path=ckpt_path
+    #     )
+    # else:
+    trainer.fit(
+        tft_model,
+        train_dataloaders=training_dataset.to_dataloader(train=True, batch_size=args.batch_size, num_workers=args.num_workers),
+        val_dataloaders=validation_dataset.to_dataloader(train=False, batch_size=args.batch_size, num_workers=args.num_workers),
+        ckpt_path=ckpt_path
+    )
 
-    best_model_path = trainer.checkpoint_callback.best_model_path
-    logger.info(f"Best model path: {best_model_path}")
-    best_tft_model = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
-    
+    # best_model_path = trainer.checkpoint_callback.best_model_path
+    # logger.info(f"Best model path: {best_model_path}")
+    # best_tft_model = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
+
     final_model_save_path = model_output_dir / "best_tft_model.ckpt"
     trainer.save_checkpoint(final_model_save_path)
     logger.info(f"Best model saved to {final_model_save_path}")
@@ -264,10 +253,11 @@ if __name__ == "__main__":
     parser.add_argument("--max-epochs", type=int, default=100, help="Maximum number of training epochs.")
     parser.add_argument("--gpus", type=int, default=1 if torch.cuda.is_available() else 0, help="Number of GPUs to use (0 for CPU).")
     parser.add_argument("--gradient-clip-val", type=float, default=0.1, help="Gradient clipping value.")
+
     parser.add_argument(
         "--precision", 
         type=str, 
-        default="32-true", 
+        default="16-mixed",
         choices=["32-true", "16-mixed", "bf16-mixed", "64-true"],
         help="Training precision (e.g., 32-true, 16-mixed, bf16-mixed)."
     )

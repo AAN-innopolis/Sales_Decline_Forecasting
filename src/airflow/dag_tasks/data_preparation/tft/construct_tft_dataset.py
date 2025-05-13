@@ -217,12 +217,13 @@ if __name__ == "__main__":
         datasets_dir = Path(settings.PROJECT_ROOT, args.output_dir)
         datasets_dir.mkdir(exist_ok=True, parents=True)
 
-        torch.save(train, datasets_dir / 'training_dataset.pt')
-        torch.save(val, datasets_dir / 'validation_dataset.pt')
-        torch.save(test, datasets_dir / 'test_dataset.pt')
+        TimeSeriesDataSet.save(train, datasets_dir / "training_dataset.tsd")
+        TimeSeriesDataSet.save(val, datasets_dir / "validation_dataset.tsd")
+        TimeSeriesDataSet.save(test, datasets_dir / "test_dataset.tsd")
+
         logger.info(f"TFT datasets saved to {datasets_dir}: \n\
-                    \rTraining: {datasets_dir / 'training_dataset.pt'}\n\
-                    \rValidation: {datasets_dir / 'validation_dataset.pt'}\n\
-                    \rTest: {datasets_dir / 'test_dataset.pt'}")
+                    \rTraining: {datasets_dir / 'training_dataset.tsd'}\n\
+                    \rValidation: {datasets_dir / 'validation_dataset.tsd'}\n\
+                    \rTest: {datasets_dir / 'test_dataset.tsd'}")
     except Exception as e:
         raise Exception(f"Error while saving TFT datasets: {e}")
