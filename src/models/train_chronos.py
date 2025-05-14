@@ -393,125 +393,127 @@ class AutoGluonForecaster:
 
         pred_series_daily.name = self.target_col
         return pred_series_daily
-    
-SEQ_LEN, HORIZON = 30, 30
-BATCH_SIZE, LR, EPOCHS = 30, 1e-3, 10
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-PREPROCESSOR_SAVE_PATH = "feature_preprocessor_chronos.joblib"
-MODEL_SAVE_DIR = "AutogluonModels_SazeracSales"
-
-df = pd.read_parquet("data/sazerac_sales_prepared.parquet")
-df[TIMESTAMP_COL] = pd.to_datetime(df[TIMESTAMP_COL])
-
-print("Initial data shape:", df.shape)
-store_counts = df.groupby(ITEM_ID_COL).size()
-valid_stores = store_counts[store_counts >= 70].index
-df = df[df[ITEM_ID_COL].isin(valid_stores)]
-print(f"Shape after filtering stores with < 70 entries: {df.shape}, {len(valid_stores)} stores remaining.")
-
-df[TARGET_COL_NAME] = np.where(df[TARGET_COL_NAME] < 0, 0, df[TARGET_COL_NAME])
-q999 = df[TARGET_COL_NAME].quantile(0.999)
-df[TARGET_COL_NAME] = np.where(df[TARGET_COL_NAME] > q999, q999, df[TARGET_COL_NAME])
-print("Target variable cleaned (negatives to 0, capped at 99.9th percentile).")
-
-store_ids = df[ITEM_ID_COL].unique()
-np.random.seed(42)
-np.random.shuffle(store_ids)
-
-n = len(store_ids)
-n_train = int(0.7 * n)
-
-train_item_ids = store_ids[:n_train]
-
-test_item_ids  = store_ids[n_train:] # Remainder for test
-
-train_df_orig = df[df[ITEM_ID_COL].isin(train_item_ids)]
-
-test_df_orig  = df[df[ITEM_ID_COL].isin(test_item_ids)]
-print(f"Data split: Train stores: {len(train_item_ids)}, Test stores: {len(test_item_ids)}")
-
-preprocessor = FeaturePreprocessorChronos(
-    static_cat_cols=STATIC_CATEGORICAL,
-    static_num_cols=STATIC_NUM,
-    dynamic_cols=DYNAMIC,
-    target_cols=TARGET
-)
-print("Fitting preprocessor on training data...")
-preprocessor.fit(train_df_orig)
-print(f"Preprocessor fitted. Saving to {PREPROCESSOR_SAVE_PATH}")
-joblib.dump(preprocessor, PREPROCESSOR_SAVE_PATH)
-
-train_df_ag = train_df_orig.rename(columns={
-    ITEM_ID_COL: "item_id",
-    TIMESTAMP_COL: "timestamp",
-    TARGET_COL_NAME: TARGET_COL_NAME
-})
-
-df_transformed_for_static = preprocessor.transform(df.copy())
-df_transformed_for_static = df_transformed_for_static.rename(columns={ITEM_ID_COL: "item_id", TIMESTAMP_COL: "timestamp"})
 
 
-static_features_all_items = df_transformed_for_static[
-    ["item_id"] + STATIC_CATEGORICAL + STATIC_NUM
-].groupby("item_id").first().reset_index()
+if __name__ == '__main__':
+    SEQ_LEN, HORIZON = 30, 30
+    BATCH_SIZE, LR, EPOCHS = 30, 1e-3, 10
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Create train TimeSeriesDataFrame
-train_data_tsdf = TimeSeriesDataFrame.from_data_frame(
-    train_df_ag,
-    id_column="item_id",
-    timestamp_column="timestamp",
-    static_features_df=static_features_all_items[static_features_all_items["item_id"].isin(train_df_ag["item_id"].unique())]
-)
+    PREPROCESSOR_SAVE_PATH = "feature_preprocessor_chronos.joblib"
+    MODEL_SAVE_DIR = "AutogluonModels_SazeracSales"
 
-train_df_transformed = preprocessor.transform(train_df_orig.copy())
-train_df_ag_transformed = train_df_transformed.rename(columns={
-    ITEM_ID_COL: "item_id",
-    TIMESTAMP_COL: "timestamp",
-    TARGET_COL_NAME: TARGET_COL_NAME 
-})
+    df = pd.read_parquet("data/sazerac_sales_prepared.parquet")
+    df[TIMESTAMP_COL] = pd.to_datetime(df[TIMESTAMP_COL])
 
-train_data_tsdf = TimeSeriesDataFrame.from_data_frame(
-    train_df_ag_transformed,
-    id_column="item_id",
-    timestamp_column="timestamp",
-    static_features_df=static_features_all_items[static_features_all_items["item_id"].isin(train_df_ag_transformed["item_id"].unique())]
-)
-print("Training TimeSeriesDataFrame prepared.")
-print("Train data columns for AG:", train_data_tsdf.columns)
-if not all(kdf in train_data_tsdf.columns for kdf in KNOWN_DYNAMIC_FEATURES):
-    missing_kdfs = [kdf for kdf in KNOWN_DYNAMIC_FEATURES if kdf not in train_data_tsdf.columns]
-    print(f"WARNING: Missing known dynamic features in training data: {missing_kdfs}")
+    print("Initial data shape:", df.shape)
+    store_counts = df.groupby(ITEM_ID_COL).size()
+    valid_stores = store_counts[store_counts >= 70].index
+    df = df[df[ITEM_ID_COL].isin(valid_stores)]
+    print(f"Shape after filtering stores with < 70 entries: {df.shape}, {len(valid_stores)} stores remaining.")
 
-prediction_length = 8
-eval_metric = "MASE" 
+    df[TARGET_COL_NAME] = np.where(df[TARGET_COL_NAME] < 0, 0, df[TARGET_COL_NAME])
+    q999 = df[TARGET_COL_NAME].quantile(0.999)
+    df[TARGET_COL_NAME] = np.where(df[TARGET_COL_NAME] > q999, q999, df[TARGET_COL_NAME])
+    print("Target variable cleaned (negatives to 0, capped at 99.9th percentile).")
 
-predictor = TimeSeriesPredictor(
-    prediction_length=prediction_length,
-    target=TARGET_COL_NAME,
-    known_covariates_names=KNOWN_DYNAMIC_FEATURES,
-    freq="W",
-    eval_metric=eval_metric,
-    path=MODEL_SAVE_DIR,
-)
+    store_ids = df[ITEM_ID_COL].unique()
+    np.random.seed(42)
+    np.random.shuffle(store_ids)
 
-print("Starting AutoGluon model training...")
-predictor.fit(
-    train_data_tsdf,
-    presets="medium_quality",
-    hyperparameters={
-         "Chronos": {
-            "model_path": "amazon/chronos-t5-small",
-            "fine_tune": True,
-            "fine_tune_epochs": 5,
-            "batch_size": 64,
-            "target_scaler": "standard",
-            "context_length": prediction_length * 4,
-         }
-    },
-    time_limit=3600,
-    enable_ensemble=False,
-)
-print("AutoGluon training complete.")
-print(f"Model saved to: {predictor.path}")
-print(f"Preprocessor saved to: {PREPROCESSOR_SAVE_PATH}")
+    n = len(store_ids)
+    n_train = int(0.7 * n)
+
+    train_item_ids = store_ids[:n_train]
+
+    test_item_ids  = store_ids[n_train:] # Remainder for test
+
+    train_df_orig = df[df[ITEM_ID_COL].isin(train_item_ids)]
+
+    test_df_orig  = df[df[ITEM_ID_COL].isin(test_item_ids)]
+    print(f"Data split: Train stores: {len(train_item_ids)}, Test stores: {len(test_item_ids)}")
+
+    preprocessor = FeaturePreprocessorChronos(
+        static_cat_cols=STATIC_CATEGORICAL,
+        static_num_cols=STATIC_NUM,
+        dynamic_cols=DYNAMIC,
+        target_cols=TARGET
+    )
+    print("Fitting preprocessor on training data...")
+    preprocessor.fit(train_df_orig)
+    print(f"Preprocessor fitted. Saving to {PREPROCESSOR_SAVE_PATH}")
+    joblib.dump(preprocessor, PREPROCESSOR_SAVE_PATH)
+
+    train_df_ag = train_df_orig.rename(columns={
+        ITEM_ID_COL: "item_id",
+        TIMESTAMP_COL: "timestamp",
+        TARGET_COL_NAME: TARGET_COL_NAME
+    })
+
+    df_transformed_for_static = preprocessor.transform(df.copy())
+    df_transformed_for_static = df_transformed_for_static.rename(columns={ITEM_ID_COL: "item_id", TIMESTAMP_COL: "timestamp"})
+
+
+    static_features_all_items = df_transformed_for_static[
+        ["item_id"] + STATIC_CATEGORICAL + STATIC_NUM
+    ].groupby("item_id").first().reset_index()
+
+    # Create train TimeSeriesDataFrame
+    train_data_tsdf = TimeSeriesDataFrame.from_data_frame(
+        train_df_ag,
+        id_column="item_id",
+        timestamp_column="timestamp",
+        static_features_df=static_features_all_items[static_features_all_items["item_id"].isin(train_df_ag["item_id"].unique())]
+    )
+
+    train_df_transformed = preprocessor.transform(train_df_orig.copy())
+    train_df_ag_transformed = train_df_transformed.rename(columns={
+        ITEM_ID_COL: "item_id",
+        TIMESTAMP_COL: "timestamp",
+        TARGET_COL_NAME: TARGET_COL_NAME
+    })
+
+    train_data_tsdf = TimeSeriesDataFrame.from_data_frame(
+        train_df_ag_transformed,
+        id_column="item_id",
+        timestamp_column="timestamp",
+        static_features_df=static_features_all_items[static_features_all_items["item_id"].isin(train_df_ag_transformed["item_id"].unique())]
+    )
+    print("Training TimeSeriesDataFrame prepared.")
+    print("Train data columns for AG:", train_data_tsdf.columns)
+    if not all(kdf in train_data_tsdf.columns for kdf in KNOWN_DYNAMIC_FEATURES):
+        missing_kdfs = [kdf for kdf in KNOWN_DYNAMIC_FEATURES if kdf not in train_data_tsdf.columns]
+        print(f"WARNING: Missing known dynamic features in training data: {missing_kdfs}")
+
+    prediction_length = 8
+    eval_metric = "MASE"
+
+    predictor = TimeSeriesPredictor(
+        prediction_length=prediction_length,
+        target=TARGET_COL_NAME,
+        known_covariates_names=KNOWN_DYNAMIC_FEATURES,
+        freq="W",
+        eval_metric=eval_metric,
+        path=MODEL_SAVE_DIR,
+    )
+
+    print("Starting AutoGluon model training...")
+    predictor.fit(
+        train_data_tsdf,
+        presets="medium_quality",
+        hyperparameters={
+             "Chronos": {
+                "model_path": "amazon/chronos-t5-small",
+                "fine_tune": True,
+                "fine_tune_epochs": 5,
+                "batch_size": 64,
+                "target_scaler": "standard",
+                "context_length": prediction_length * 4,
+             }
+        },
+        time_limit=3600,
+        enable_ensemble=False,
+    )
+    print("AutoGluon training complete.")
+    print(f"Model saved to: {predictor.path}")
+    print(f"Preprocessor saved to: {PREPROCESSOR_SAVE_PATH}")
