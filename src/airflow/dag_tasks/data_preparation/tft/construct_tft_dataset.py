@@ -221,6 +221,10 @@ if __name__ == "__main__":
         TimeSeriesDataSet.save(val, datasets_dir / "validation_dataset.tsd")
         TimeSeriesDataSet.save(test, datasets_dir / "test_dataset.tsd")
 
+        torch.save(train, datasets_dir / 'training_dataset.pt')
+        torch.save(val, datasets_dir / 'validation_dataset.pt')
+        torch.save(test, datasets_dir / 'test_dataset.pt')
+
         logger.info(f"TFT datasets saved to {datasets_dir}: \n\
                     \rTraining: {datasets_dir / 'training_dataset.tsd'}\n\
                     \rValidation: {datasets_dir / 'validation_dataset.tsd'}\n\
