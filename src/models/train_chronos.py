@@ -229,10 +229,10 @@ class AutoGluonForecaster:
         # Apply same initial cleaning as in training
         store_counts = df.groupby(self.item_id_col).size() # Use self.item_id_col
         valid_stores = store_counts[store_counts >= 70].index
-        df = df[df[self.item_id_col].isin(valid_stores)] # Use self.item_id_col
+        df = df[df[self.item_id_col].isin(valid_stores)].copy() # Added .copy() to prevent SettingWithCopyWarning
         
         if self.target_col in df.columns: # Use self.target_col
-            df[self.target_col] = np.where(df[self.target_col] < 0, 0, df[self.target_col])
+            df.loc[:, self.target_col] = np.where(df[self.target_col] < 0, 0, df[self.target_col])
             if not df.empty:
                 # Use self.base_df_orig for quantile calculation, filtered by valid_stores
                 # to be consistent with how df is being filtered.
@@ -241,11 +241,11 @@ class AutoGluonForecaster:
                     self.base_df_orig[self.item_id_col].isin(valid_stores) # Use self.item_id_col
                 ][self.target_col].quantile(0.999) # Use self.target_col
 
-                df[self.target_col] = np.where(df[self.target_col] > quantile_999, # Use self.target_col
+                df.loc[:, self.target_col] = np.where(df[self.target_col] > quantile_999, # Use self.target_col
                                              quantile_999,
                                              df[self.target_col]) # Use self.target_col
         
-        df[self.timestamp_col] = pd.to_datetime(df[self.timestamp_col]) # Use self.timestamp_col
+        df.loc[:, self.timestamp_col] = pd.to_datetime(df[self.timestamp_col]) # Use self.timestamp_col
         return df
 
     def get_available_stores(self) -> List[str]:
@@ -393,7 +393,9 @@ class AutoGluonForecaster:
 
         pred_series_daily.name = self.target_col
         return pred_series_daily
-if __name__ == "__main__":
+    
+
+if __name__ == '__main__':
     SEQ_LEN, HORIZON = 30, 30
     BATCH_SIZE, LR, EPOCHS = 30, 1e-3, 10
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
