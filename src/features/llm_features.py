@@ -58,21 +58,24 @@ def prepare_llm_prompts(df: pd.DataFrame,
     store_desc_format = ". ".join(store_desc_parts) + "."
     
     # Create dynamic columns
-    df['store_description'] = df.apply(
+    # Make a copy to avoid SettingWithCopyWarning
+    df = df.copy()
+    
+    df.loc[:, 'store_description'] = df.apply(
         lambda x: store_desc_format.format(**x.to_dict()), axis=1
     )
 
     # Holiday descriptions
     if 'is_holiday' in df.columns and 'holiday_name' in df.columns:
-        df['holiday_description'] = df.apply(
+        df.loc[:, 'holiday_description'] = df.apply(
             lambda x: f"Date is a holiday ({x['holiday_name']})." if x['is_holiday'] else "", 
             axis=1
         )
     else:
-        df['holiday_description'] = ""
+        df.loc[:, 'holiday_description'] = ""
 
     # Sales summary
-    df['sales_summary'] = df.apply(
+    df.loc[:, 'sales_summary'] = df.apply(
         lambda x: f"Sales: ${x['purchase_amount']:.2f}, "
                 f"Bottles: {int(x['purchased_bottles'])}, "
                 f"Liters: {x['purchased_liters']:.2f}.", 
@@ -88,17 +91,17 @@ def prepare_llm_prompts(df: pd.DataFrame,
     if 'unique_items' in df.columns:
         transaction_parts.append("Items: {unique_items}")
     
-    df['transaction_summary'] = ""
+    df.loc[:, 'transaction_summary'] = ""
     if transaction_parts:
         transaction_format = ". ".join(transaction_parts) + "."
-        df['transaction_summary'] = df.apply(
+        df.loc[:, 'transaction_summary'] = df.apply(
             lambda x: transaction_format.format(**x.to_dict()), axis=1
         )
 
     # Clean text columns
     text_cols = ['store_description', 'holiday_description', 'sales_summary', 'transaction_summary']
     for col in text_cols:
-        df[col] = df[col].str.replace(r'\s+', ' ', regex=True).str.strip()
+        df.loc[:, col] = df[col].str.replace(r'\s+', ' ', regex=True).str.strip()
 
     prompts = []
     for store in df['store'].unique():
@@ -124,20 +127,25 @@ Your task is to predict future sales based on historical data and store characte
 
         # Add item details
         if 'item_details' in store_data.columns:
-            items = store_data.iloc[-1]['item_details']
-            if pd.notna(items).all() and items:
-                base_prompt += "\n###Product Portfolio###\n"
-                items_by_category = {}
-                for item in items:
-                    category = item.get('category_name', 'Other')
-                    items_by_category.setdefault(category, []).append(item)
-                
-                for cat, cat_items in items_by_category.items():
-                    base_prompt += f"\n{cat}:\n"
-                    for item in cat_items:
-                        base_prompt += (f"- {item.get('im_desc', 'Unknown')}\n"
-                                      f"  * Pack Size: {item.get('pack', 'N/A')} units\n"
-                                      f"  * Volume: {item.get('bottle_volume_ml', 'N/A')}ml\n")
+            try:
+                items = store_data.iloc[-1]['item_details']
+                # Simple check - first confirm it's iterable by trying to iterate
+                if items and hasattr(items, '__iter__'):
+                    base_prompt += "\n###Product Portfolio###\n"
+                    items_by_category = {}
+                    for item in items:
+                        category = item.get('category_name', 'Other')
+                        items_by_category.setdefault(category, []).append(item)
+                    
+                    for cat, cat_items in items_by_category.items():
+                        base_prompt += f"\n{cat}:\n"
+                        for item in cat_items:
+                            base_prompt += (f"- {item.get('im_desc', 'Unknown')}\n"
+                                          f"  * Pack Size: {item.get('pack', 'N/A')} units\n"
+                                          f"  * Volume: {item.get('bottle_volume_ml', 'N/A')}ml\n")
+            except:
+                # Silently continue if there's any error with items
+                print("")
 
         # Historical data
         if include_history:
@@ -160,6 +168,7 @@ Predict sales for the next {prediction_horizon} days starting from {current_last
 1. Consider historical patterns, holidays, and store characteristics
 2. Account for weekly and seasonal trends
 3. Provide confidence intervals for predictions
+4. YOU MUST provide predictions for EXACTLY {prediction_horizon} days
 
 ###Output Format###
 {{
@@ -170,7 +179,8 @@ Predict sales for the next {prediction_horizon} days starting from {current_last
       "confidence_lower": XXX.XX,
       "confidence_upper": XXX.XX,
       "reasoning": "Brief explanation"
-    }}
+    }},
+    ... (repeat for all {prediction_horizon} days)
   ],
   "key_factors": ["Factor1", "Factor2"]
 }}"""

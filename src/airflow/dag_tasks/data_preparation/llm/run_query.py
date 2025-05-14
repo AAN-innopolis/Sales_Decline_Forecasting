@@ -34,8 +34,8 @@ class LLMForecaster:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are an expert sales forecasting analyst."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": "You are an expert sales forecasting analyst. Please provide your response in JSON format."},
+                    {"role": "user", "content": f"Please analyze the following data and provide a sales forecast in JSON format: {prompt}"}
                 ],
                 temperature=0.3,
                 response_format={"type": "json_object"}
@@ -52,6 +52,19 @@ class LLMForecaster:
         try:
             dates = pd.date_range(start=start_date + pd.Timedelta(days=1), periods=days)
             values = [pred.get('predicted_sales', None) for pred in prediction['predictions']]
+            
+            # Handle case where we get fewer predictions than requested
+            if len(values) < days:
+                print(f"Warning: LLM returned {len(values)} predictions, but {days} were requested")
+                # Extend the values list to match requested days
+                if len(values) > 0:
+                    # If we have at least one value, repeat the last value
+                    last_value = values[-1]
+                    values.extend([last_value] * (days - len(values)))
+                else:
+                    # If no values, pad with None
+                    values = [None] * days
+            
             return pd.Series(values, index=dates)
         except KeyError as e:
             raise ProcessingError(f"Invalid prediction format: {str(e)}")

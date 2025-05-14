@@ -8,6 +8,23 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Fix PyTorch classes path issue that causes Streamlit errors
+try:
+    import torch.classes
+    if not hasattr(torch.classes, '__path__'):
+        # Create an empty list as __path__ attribute
+        torch.classes.__path__ = []
+    elif not isinstance(torch.classes.__path__, list):
+        # If it's not a list, recreate it
+        try:
+            delattr(torch.classes, '__path__')
+            torch.classes.__path__ = []
+        except (AttributeError, TypeError):
+            # If we can't delete it or there's a type error, use a more direct approach
+            torch.classes.__dict__['__path__'] = []
+except Exception as e:
+    print(f"Warning: Could not fix torch.classes.__path__: {e}")
+
 from src.models.train_chronos import AutoGluonForecaster, FeaturePreprocessorChronos
 from src.airflow.dag_tasks.data_preparation.llm.run_query import LLMForecaster
 
@@ -15,7 +32,7 @@ from src.airflow.dag_tasks.data_preparation.llm.run_query import LLMForecaster
 
 MODEL_PATH = "models/chronos/AutogluonModels_SazeracSales" 
 PREPROCESSOR_PATH = "models/chronos/feature_preprocessor_chronos.joblib"
-BASE_DATA_PATH = "data/prepared/tft_features.parquet"
+BASE_DATA_PATH = "data/prepared/sazerac_sales_prepared.parquet"
 LLM_BASE_DATA_PATH = "data/prepared/llm_features.parquet"
 
 env_path = Path(__file__).resolve().parents[1] / ".env"
@@ -75,9 +92,22 @@ def predict_llm(store: str, date: pd.Timestamp, days: int) -> pd.Series:
         if not prompts:
             raise ValueError(f"No prompts generated for store {store}.")
         
-        prompt_content = prompts[0].get("content", "")
+        print("PROOOMPTS", prompts)
         
+        prompt_content = None
+        if prompts and isinstance(prompts[0], dict):
+            if 'content' in prompts[0]:
+                prompt_content = prompts[0].get('content')
+            elif 'prompt' in prompts[0]:
+                prompt_content = prompts[0].get('prompt')
+        
+        print('PROMPT CONTENT: ', prompt_content)
+        
+        if not prompt_content:
+            raise ValueError(f"Empty prompt content or invalid format: {prompts[0]}")
+            
         llm_response = llm_forecaster.query_llm(prompt_content)
+        print('LLM RESPONSE: ', llm_response)
         
         predictions = llm_forecaster.process_prediction(
             prediction=llm_response,
