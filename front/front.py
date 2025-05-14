@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 import torch
 import streamlit as st
 import pandas as pd
@@ -16,6 +17,10 @@ MODEL_PATH = "models/chronos/AutogluonModels_SazeracSales"
 PREPROCESSOR_PATH = "models/chronos/feature_preprocessor_chronos.joblib"
 BASE_DATA_PATH = "data/prepared/tft_features.parquet"
 LLM_BASE_DATA_PATH = "data/prepared/llm_features.parquet"
+
+env_path = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(env_path)
+api_key, base_url = os.getenv('API_KEY'), os.getenv('BASE_URL')
 
 @st.cache_resource
 def load_forecaster():

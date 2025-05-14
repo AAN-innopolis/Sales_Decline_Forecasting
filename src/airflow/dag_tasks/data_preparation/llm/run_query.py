@@ -6,10 +6,10 @@ from typing import Optional, Dict, List
 from src.features.llm_features import prepare_llm_prompts
 
 class LLMForecaster:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key, base_url):
         self.client = openai.OpenAI(
-            api_key="sk-vdyT3Ze0iuh8cgXsc_STwA", # Do not store your creds in plain text, kids!
-            base_url="https://proxy.merkulov.ai"
+            api_key=api_key,
+            base_url=base_url
         )
         self.model = "gpt-4-turbo"
     
