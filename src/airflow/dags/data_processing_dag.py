@@ -92,17 +92,17 @@ with TaskGroup(group_id='model_features_preparation', dag=dag) as model_features
         with TaskGroup(group_id='lstm_specific_features', dag=dag) as lstm_specific_features:
             prepare_lstm_features = BashOperator(
                 task_id='prepare_lstm_features',
-                bash_command=f'python {DAG_TASKS_DIR}/prepare_lstm_features.py --log-level INFO',
+                bash_command=f'python {DAG_TASKS_DIR}/lstm/prepare_lstm_features.py --log-level INFO',
                 dag=dag
             )
             encode_lstm_features = BashOperator(
                 task_id='encode_lstm_features',
-                bash_command=f'python {DAG_TASKS_DIR}/encode_lstm_features.py --log-level INFO  --embedding-dim 16',
+                bash_command=f'python {DAG_TASKS_DIR}/lstm/encode_lstm_features.py --log-level INFO  --embedding-dim 16',
                 dag=dag
             )
             construct_lstm_dataset = BashOperator(
                 task_id='construct_lstm_dataset',
-                bash_command=f'python {DAG_TASKS_DIR}/construct_lstm_dataset.py --log-level INFO',
+                bash_command=f'python {DAG_TASKS_DIR}/lstm/construct_lstm_dataset.py --log-level INFO',
                 dag=dag
             )
             prepare_lstm_features >> encode_lstm_features >> construct_lstm_dataset
@@ -111,12 +111,12 @@ with TaskGroup(group_id='model_features_preparation', dag=dag) as model_features
         with TaskGroup(group_id='tft_specific_features', dag=dag) as tft_specific_features:
             prepare_tft_features = BashOperator(
                 task_id='prepare_tft_features',
-                bash_command=f'python {DAG_TASKS_DIR}/prepare_tft_features.py --log-level INFO',
+                bash_command=f'python {DAG_TASKS_DIR}/tft/prepare_tft_features.py --log-level INFO',
                 dag=dag
             )
             construct_tft_dataset = BashOperator(
                 task_id='construct_tft_dataset',
-                bash_command=f'python {DAG_TASKS_DIR}/construct_tft_dataset.py --log-level INFO',
+                bash_command=f'python {DAG_TASKS_DIR}/tft/construct_tft_dataset.py --log-level INFO',
                 dag=dag
             )
             prepare_tft_features >> construct_tft_dataset
@@ -125,12 +125,12 @@ with TaskGroup(group_id='model_features_preparation', dag=dag) as model_features
     with TaskGroup(group_id='llm_features', dag=dag) as llm_features:
         prepare_llm_features = BashOperator(
             task_id='prepare_llm_features',
-            bash_command=f'python {DAG_TASKS_DIR}/prepare_llm_features.py --log-level INFO',
+            bash_command=f'python {DAG_TASKS_DIR}/llm/prepare_llm_features.py --log-level INFO',
             dag=dag
         )
         construct_llm_prompts = BashOperator(
             task_id='construct_llm_prompts',
-            bash_command=f'python {DAG_TASKS_DIR}/construct_llm_prompts.py --log-level INFO',
+            bash_command=f'python {DAG_TASKS_DIR}/llm/construct_llm_prompts.py --log-level INFO',
             dag=dag
         )
         prepare_llm_features >> construct_llm_prompts

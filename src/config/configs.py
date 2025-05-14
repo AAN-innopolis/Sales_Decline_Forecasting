@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     Used for centralized configuration storage.
     """
     SOCRATA_API_TOKEN: str = ''
+    API_KEY: str = ''
+    BASE_URL: str = ''
 
     DEVICE: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     NUM_WORKERS: int = 4

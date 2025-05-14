@@ -190,7 +190,7 @@ if __name__ == "__main__":
                         help='Path to the input file with TFT features')
     parser.add_argument('--output-dir', type=str, default='data/prepared/tft_datasets',
                         help='Path to the output directory for TFT datasets')
-    parser.add_argument('--min-history-length', type=int, default=150,
+    parser.add_argument('--min-history-length', type=int, default=300,
                         help='Minimum history length')
     parser.add_argument('--target-col', type=str, default='purchase_amount',
                         help='Target column name')
