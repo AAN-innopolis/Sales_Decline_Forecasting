@@ -37,7 +37,7 @@ from src.config.configs import settings
 
 MODEL_PATH = "models/chronos/AutogluonModels_SazeracSales" 
 PREPROCESSOR_PATH = "models/chronos/feature_preprocessor_chronos.joblib"
-BASE_DATA_PATH = "data/sazerac_sales_prepared.parquet"
+BASE_DATA_PATH = "data/prepared/sazerac_sales_prepared.parquet"
 LLM_BASE_DATA_PATH = "data/prepared/llm_features.parquet"
 
 env_path = Path(__file__).resolve().parents[1] / ".env"
@@ -68,7 +68,7 @@ def load_llm_df():
 
 forecaster = load_forecaster()
 llm_df = load_llm_df()
-# AVAILABLE_STORES = forecaster.get_available_stores() if forecaster else ["Error: Model not loaded"]
+AVAILABLE_STORES = forecaster.get_available_stores() if forecaster else ["Error: Model not loaded"]
 
 # ==========CHRONOS-RELATED-STUFF=================
 
@@ -77,15 +77,15 @@ llm_df = load_llm_df()
 logger = setup_logger(name=__name__, level="INFO")
 
 @st.cache_data
-def load_lstm_base_data():
+def load_lstm_base_data(stores_length: int = 10, min_history_length: int = 300):
     df = pd.read_parquet("data/prepared/cleaned_data.parquet")
     name_to_store_dict = dict(zip(df['name'], df['store']))
     store_to_name_dict = dict(zip(df['store'], df['name']))
-    unique_names = set(df['name'])
-    unique_ids = list(df["store"])
-    return df, name_to_store_dict, store_to_name_dict, unique_names, unique_ids
+    store_counts = df.groupby('store').size()
+    unique_ids = AVAILABLE_STORES
+    return df, name_to_store_dict, store_to_name_dict, unique_ids
 
-df, name_to_store_dict, store_to_name_dict, unique_names, unique_ids = load_lstm_base_data()
+df, name_to_store_dict, store_to_name_dict, unique_ids = load_lstm_base_data()
 
 sequence_length = 30
 embedding_size = 16
@@ -132,6 +132,8 @@ def prepare_inference_sample(df_dict: dict, store: int = 2106, date: pd.Timestam
     start_row = max(0, target_idx - sequence_length)
     features_seq = store_data.iloc[start_row:target_idx][feature_cols].values
 
+    print(features_seq.shape)
+
     # pad if few datapoints
     if features_seq.shape[0] < sequence_length:
         pad_rows = sequence_length - features_seq.shape[0]
@@ -143,7 +145,10 @@ def prepare_inference_sample(df_dict: dict, store: int = 2106, date: pd.Timestam
 
     return input_tensor, actual_date
 
+@st.cache_data
 def load_model(checkpoint_path, input_dim, seq_len, horizon):
+    logger.info("Entered load model")
+    print(input_dim)
     model = LitHybrid.load_from_checkpoint(
         checkpoint_path,
         input_dim=input_dim,
@@ -151,7 +156,9 @@ def load_model(checkpoint_path, input_dim, seq_len, horizon):
         horizon=horizon,
         lr=1e-3  # irrelevant for inference
     )
+    logger.info("Created model")
     model.eval()
+    logger.info("Set model to eval")
     return model
 
 def predict(model, input_tensor):
@@ -205,12 +212,6 @@ store_data_dict = load_lstm_feature_data()
 
 def predict_lstm(input: torch.FloatTensor, store: str, date: pd.Timestamp, days: int) -> pd.Series:
     # load model
-    @st.cache_data
-    def load_model(path, input_dim, sequence_length, horizon):
-        model_path = Path(settings.PROJECT_ROOT, "models/attention_lstm/best.ckpt")
-        model = load_model(model_path, input_dim, sequence_length, 30)
-        return model
-
     _, input_dim = input.shape[1:]
     model_path = Path(settings.PROJECT_ROOT, "models/attention_lstm/best.ckpt")
     model = load_model(model_path, input_dim, sequence_length, 30)
@@ -230,7 +231,7 @@ def predict_tft(store: str, date: pd.Timestamp, days: int) -> pd.Series:
 
 def predict_llm(store: str, date: pd.Timestamp, days: int) -> pd.Series:
     try:
-        llm_forecaster = LLMForecaster()
+        llm_forecaster = LLMForecaster(api_key, base_url)
         
         prompts = llm_forecaster.generate_prompts(
             df=llm_df,
@@ -298,17 +299,63 @@ with col1:
     days = st.selectbox("Forecast horizon (days):", [30], index=0)
     run = st.button("Run Forecast")
 
+def get_historical_data(store: str, end_date: pd.Timestamp, days: int) -> pd.Series:
+    """
+    Get historical sales data for the specified store and time period.
+    
+    Args:
+        store: Store ID
+        end_date: End date for historical data
+        days: Number of days of historical data to retrieve
+    
+    Returns:
+        pd.Series: Historical sales data with datetime index
+    """
+    try:
+        # Use the data already loaded in the forecaster
+        if forecaster and hasattr(forecaster, 'base_df') and forecaster.base_df is not None:
+            df = forecaster.base_df.copy()
+        else:
+            # Fallback to loading from file
+            df = pd.read_parquet(BASE_DATA_PATH)
+        
+        # Filter for the specific store
+        store_data = df[df[forecaster.item_id_col] == store]
+        
+        # Get the target column name from the forecaster
+        target_col = forecaster.target_col  # This should be 'sale_dollars' based on your code
+        
+        # Filter to the requested time period
+        start_date = end_date - pd.Timedelta(days=days-1)
+        historical = store_data[
+            (store_data[forecaster.timestamp_col] >= start_date) & 
+            (store_data[forecaster.timestamp_col] <= end_date)
+        ]
+        
+        # Convert to series with datetime index
+        if not historical.empty:
+            historical_series = historical.set_index(forecaster.timestamp_col)[target_col]
+            return historical_series
+        else:
+            st.warning(f"No historical data found for store {store} in the specified date range")
+            return pd.Series([], dtype=float)
+            
+    except Exception as e:
+        st.error(f"Error loading historical data: {e}")
+        return pd.Series([], dtype=float)
+
 with col2:
     st.header("Forecast Chart")
     if run:
+        forecast_dates = None
         if model_option == "LSTM":
             # load input
             input, date = prepare_inference_sample(store_data_dict, store, date)
             preds = predict_lstm(input, store, pd.to_datetime(date), days)
             # plot the inferred things
             forecast_horizon = preds.shape[0]
-            forecast_dates = pd.date_range(start=date + pd.Timedelta(days=1), periods=forecast_horizon, freq='D')
-
+            forecast_dates = pd.date_range(start=date , periods=forecast_horizon, freq='D')
+            print(forecast_dates)
             # get the real values
             actual_values = []
 
@@ -322,7 +369,14 @@ with col2:
                     actual_values.append(0.0)  # No data → assume zero sales
 
             actual_values = np.array(actual_values)
-            real = actual_values
+
+            scaler_path = Path(settings.PROJECT_ROOT, 'models/embeddings/lstm_scaler.pkl')
+            feature_scaler = FeatureScaler.load(scaler_path, logger=logger)
+
+            preds_original_scale = inverse_scale_purchase_amount(preds, feature_scaler)
+            actual_values_original_scale = inverse_scale_purchase_amount(actual_values, feature_scaler)
+            real = actual_values_original_scale
+            preds = preds_original_scale
         elif model_option == "TFT":
             preds = predict_tft(store, pd.to_datetime(date), days)
         elif model_option == "CHRONOS":
@@ -330,11 +384,22 @@ with col2:
         else:
             preds = predict_llm(store, pd.to_datetime(date), days)
 
-        # TODO: complete real 
-        # real = pd.Series([None] * days, index=pd.date_range(end=pd.to_datetime(date), periods=days))
+        # Get real historical data
+        if model_option != "LSTM":
+            real = get_historical_data(store, pd.to_datetime(date), days)
 
-        df_plot = pd.DataFrame({"Real": real, "Predicted": preds})
-        st.line_chart(df_plot)
+        # If historical data is empty, show a message
+        # if real.empty:
+          #  st.warning("No historical data available for the selected period")
+            # Create empty series with date range for plotting
+            # real = pd.Series([None] * days, index=pd.date_range(end=pd.to_datetime(date), periods=days))
+
+        if forecast_dates is not None:
+            df_plot = pd.DataFrame({"Real": real, "Predicted": preds, "Date": forecast_dates})
+            st.line_chart(df_plot, x='Date')
+        else:
+            df_plot = pd.DataFrame({"Real": real, "Predicted": preds})
+            st.line_chart(df_plot)
         st.success(f"Forecast displayed for {store} from {date}.")
     else:
         st.info("Set parameters and click 'Run Forecast' to view chart.")

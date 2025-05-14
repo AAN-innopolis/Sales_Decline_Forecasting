@@ -11,7 +11,7 @@ class LLMForecaster:
             api_key=api_key,
             base_url=base_url
         )
-        self.model = "gpt-4-turbo"
+        self.model = "gpt-4o-mini"
     
     def generate_prompts(self, 
                         df: pd.DataFrame,

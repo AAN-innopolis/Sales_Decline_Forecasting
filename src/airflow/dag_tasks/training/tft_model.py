@@ -253,7 +253,7 @@ if __name__ == "__main__":
         default="INFO", 
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     )
-    parser.add_argument("--batch-size", type=int, default=32, help="Batch size for training.")
+    parser.add_argument("--batch-size", type=int, default=256, help="Batch size for training.")
     parser.add_argument("--num-workers", type=int, default=8, help="Number of workers for DataLoader.")
     parser.add_argument("--hidden-size", type=int, default=32, help="Hidden size of network layers.")
     parser.add_argument("--lstm-layers", type=int, default=2, help="Number of LSTM layers.")
