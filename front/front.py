@@ -187,21 +187,78 @@ with col1:
     days = st.selectbox("Forecast horizon (days):", [30], index=0)
     run = st.button("Run Forecast")
 
+
+def get_historical_data(store: str, end_date: pd.Timestamp, days: int) -> pd.Series:
+    """
+    Get historical sales data for the specified store and time period.
+
+    Args:
+        store: Store ID
+        end_date: End date for historical data
+        days: Number of days of historical data to retrieve
+
+    Returns:
+        pd.Series: Historical sales data with datetime index
+    """
+    try:
+        # Use the data already loaded in the forecaster
+        if forecaster and hasattr(forecaster, 'base_df') and forecaster.base_df is not None:
+            df = forecaster.base_df.copy()
+        else:
+            # Fallback to loading from file
+            df = pd.read_parquet(BASE_DATA_PATH)
+        print(df.shape)
+        # Filter for the specific store
+        store_data = df[df[forecaster.item_id_col] == store].copy()
+        print(store_data)
+
+        # Get the target column name from the forecaster
+        # target_col = forecaster.target_col  # This should be 'sale_dollars' based on your code
+        target_col = "purchase_amount"  # This should be 'sale_dollars' based on your code
+
+        # Filter to the requested time period
+        start_date = end_date - pd.Timedelta(days=days - 1)
+        historical = store_data[
+            (store_data[forecaster.timestamp_col] >= start_date) &
+            (store_data[forecaster.timestamp_col] <= end_date)
+        ]
+
+        print(historical)
+
+        # Convert to series with datetime index
+        if not historical.empty:
+            historical_series = historical.set_index(forecaster.timestamp_col)[target_col]
+            return historical_series
+        else:
+            st.warning(f"No historical data found for store {store} in the specified date range")
+            return pd.Series([], dtype=float)
+
+    except Exception as e:
+        st.error(f"Error loading historical data: {e}")
+        return pd.Series([], dtype=float)
+
+
 with col2:
     st.header("Forecast Chart")
     if run:
         if model_option == "LSTM":
             preds = predict_lstm(store, pd.to_datetime(date), days)
         elif model_option == "TFT":
-            preds = predict_tft(store, pd.to_datetime(date), days)
+            preds = predict_tft(store, pd.to_datetime(date), days) #TODO FIXME
         elif model_option == "CHRONOS":
             preds = predict_chronos(store, pd.to_datetime(date), days)
         else:
             preds = predict_llm(store, pd.to_datetime(date), days)
 
-        # TODO: complete real 
-        real = pd.Series([None] * days,
-                         index=pd.date_range(end=pd.to_datetime(date), periods=days))
+        # Get real historical data
+        real = get_historical_data(store, pd.to_datetime(date), days)
+
+        # If historical data is empty, show a message
+        if real.empty:
+            st.warning("No historical data available for the selected period")
+            # Create empty series with date range for plotting
+            real = pd.Series([None] * days,
+                             index=pd.date_range(end=pd.to_datetime(date), periods=days))
 
         df_plot = pd.DataFrame({"Real": real, "Predicted": preds})
         st.line_chart(df_plot)
