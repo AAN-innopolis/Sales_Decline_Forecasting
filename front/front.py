@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Fix PyTorch classes path issue that causes Streamlit errors
@@ -222,12 +223,111 @@ def predict_lstm(input: torch.FloatTensor, store: str, date: pd.Timestamp, days:
     logger.info(f"Predicted values received.")
     return preds
 
+def predict_tft(
+        store_id: str,
+        date: pd.Timestamp,
+        days: int
+) -> pd.Series:
+    """
+    Generate predictions using a trained TFT model and pre-loaded test dataset.
 
-def predict_tft(store: str, date: pd.Timestamp, days: int) -> pd.Series:
-    # TODO: integrate your trained TFT model
-    return pd.Series([None] * days,
-                     index=pd.date_range(start=date + pd.Timedelta(days=1), periods=days))
+    Args:
+        store: Store identifier to forecast
+        date: Last known date (start forecasting from date + 1)
+        days: Number of days to forecast
+        checkpoint_path: Path to trained model checkpoint
+        test_dataset: Pre-loaded TimeSeriesDataSet containing test data
 
+    Returns:
+        pd.Series with predictions indexed by future dates
+    """
+    # Load trained model
+
+    tft_model = TemporalFusionTransformer.load_from_checkpoint(
+        "models/tft_model/best_tft_model.ckpt", map_location=device
+    )
+    tft_model.to(device)
+    tft_model.eval()
+
+    # logger = setup_logger(name=__name__, level="INFO")
+    test_dataset, raw_df = load_test_dataset(Path("data/prepared/tft_datasets"), None)
+    print(test_dataset.data)
+
+    print("StoreId: ", store_id)
+    print(type(store_id))
+    print(raw_df["store"].dtype)
+    raw_df["store"] = pd.to_numeric(raw_df["store"])
+    print(raw_df["store"].dtype)
+    print(raw_df)
+    store_data = raw_df[raw_df['store'] == store_id].copy()
+    print(store_data)
+    store_data["store"] = store_data["store"].astype(str)
+
+
+    store_data['date'] = pd.to_datetime(store_data['date'])
+    # logger.info(f"Max prediction length: {test_dataset.max_prediction_length}")
+    split_time_idx = store_data['time_idx'].max() \
+                     - test_dataset.max_prediction_length
+    # historical_data = store_data[store_data['time_idx'] <= split_time_idx][-50:]
+    historical_data = store_data[store_data["date"] <= date]
+    print(historical_data)
+    forecast_data = store_data[store_data['time_idx'] > split_time_idx]
+
+    store_dataset = TimeSeriesDataSet.from_dataset(test_dataset, historical_data)
+    store_dataloader = store_dataset.to_dataloader(
+        train=False,
+        batch_size=16,
+        num_workers=3
+    )
+
+    raw_output, X, actuals_output, index, decoder_lengths = tft_model.predict(
+        store_dataloader,
+        mode="raw",
+        return_x=True,
+        return_y=True,
+        return_index=True,
+        return_decoder_lengths=True
+    )
+
+    # central_idx = len(tft_model.loss.quantiles) // 2
+    print(X)
+    prediction_values = raw_output['prediction'].flatten().cpu().numpy()
+
+    # test_dataset = TimeSeriesDataSet.load("data/prepared/tft_datasets/test_dataset.tsd")
+
+    # Filter test data for target store
+
+    # Find temporal boundaries
+    # last_known_point = store_data[store_data["date"] <= date].iloc[-1]
+    # max_time_idx = last_known_point["time_idx"]
+    #
+    # # Create filter for prediction window
+    # time_filter = (store_data["time_idx"] > max_time_idx) & \
+    #               (store_data["time_idx"] <= max_time_idx + days)
+
+    # if time_filter.sum() < days:
+    #     raise ValueError(f"Insufficient test data for {days}-day forecast")
+
+    # Create prediction dataset subset
+    # prediction_data = store_data[time_filter]
+    # prediction_dataset = TimeSeriesDataSet.from_parameters(
+    #     test_dataset.get_parameters(),
+    #     prediction_data,
+    #     predict=True,
+    #     stop_randomization=True
+    # )
+
+    # Generate predictions
+    # dataloader = test_dataset.to_dataloader(batch_size=32, train=False)
+    predictions = prediction_values[:days]
+
+    # Create date index for forecast
+    future_dates = pd.date_range(
+        start=date + pd.Timedelta(days=1),
+        periods=days
+    )
+
+    return pd.Series(predictions, index=future_dates, name="sales_amount")
 
 def predict_llm(store: str, date: pd.Timestamp, days: int) -> pd.Series:
     try:
@@ -378,7 +478,7 @@ with col2:
             real = actual_values_original_scale
             preds = preds_original_scale
         elif model_option == "TFT":
-            preds = predict_tft(store, pd.to_datetime(date), days)
+            preds = predict_tft(store, pd.to_datetime(date), days) #TODO FIXME
         elif model_option == "CHRONOS":
             preds = predict_chronos(store, pd.to_datetime(date), days)
         else:

@@ -37,16 +37,20 @@ def load_test_dataset(
     Returns:
         The test dataset and the raw dataframe.
     """
-    logger.info(f"Loading test dataset from {data_dir}...")
+    if (logger != None):
+        logger.info(f"Loading test dataset from {data_dir}...")
     try:
+        # test_dataset = TimeSeriesDataSet.load("data/prepared/tft_datasets/test_dataset.tsd")
         test_dataset = torch.load(data_dir / "test_dataset.pt", weights_only=False)
-        raw_df = pd.read_parquet( data_dir / ".." / "tft_features.parquet" )
+        raw_df = pd.read_parquet(data_dir / ".." / "tft_features.parquet" )
         categorical_features = ['store','name','address','city','zipcode','county','is_holiday', 'holiday_name']
         raw_df['purchase_amount'] = raw_df['purchase_amount'].clip(lower=0)
         raw_df[categorical_features] = raw_df[categorical_features].astype(str)
-        logger.info("Test dataset loaded.")
+        if (logger != None):
+            logger.info("Test dataset loaded.")
     except FileNotFoundError:
-        logger.error(f"Test dataset not found in {data_dir}.")
+        if (logger != None):
+            logger.error(f"Test dataset not found in {data_dir}.")
         raise
     return test_dataset, raw_df
 
