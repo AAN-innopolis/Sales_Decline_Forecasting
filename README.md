@@ -29,19 +29,19 @@ Sales Decline Forecasting is a comprehensive system for analyzing and predicting
 ## Key Features
 
 - Models are trained on the full dataset, including all vendors and stores, enabling forecasts for any store and brand present in the database.
-- Utilizes modern architectures: LSTM with attention, Temporal Fusion Transformer (TFT), and LLMs for generating explanations.
+- Utilizes modern architectures: LSTM with attention, Temporal Fusion Transformer (TFT), and LLM (GPT-4o mini and Chronos Bolt) for generating explanations.
 - Handles time series data, store embeddings, feature scaling, and accounts for seasonality and holidays.
 
 ## Interactive User Experience
 
 - The system provides an intuitive interface (Streamlit) where users can:
-  - Select a store from a dropdown (or enter its ID if it exists in the database).
-  - Select a vendor (or view all vendors).
+  - Select a model from a dropdown.
+  - Select a store id from a dropdown menu.
   - Receive a sales forecast for the next 30 days.
 
 ## Example Usage Scenario (for Demo/Presentation)
 
-1. The user selects a store and vendor from the list.
+1. The user selects a model and a store from the list.
 2. The system generates a sales forecast for the chosen store.
 3. Users can compare forecasts for different vendors or stores.
 
