@@ -1,6 +1,6 @@
 # Sales Decline Forecasting
 
-Sales Decline Forecasting is a comprehensive system for analyzing and predicting sales dynamics of alcoholic beverages in retail stores. The solution leverages state-of-the-art deep learning techniques, and is designed to work with datasets containing multiple vendors and stores.
+Sales Decline Forecasting is a comprehensive system for analyzing and predicting sales dynamics of alcoholic beverages in retail stores. The solution uses several state-of-the-art deep learning techniques, and is designed to work with datasets containing multiple vendors and stores.
 
 ## Who Needs This System and Why?
 
@@ -37,22 +37,19 @@ Sales Decline Forecasting is a comprehensive system for analyzing and predicting
 - The system provides an intuitive interface (Streamlit) where users can:
   - Select a store from a dropdown (or enter its ID if it exists in the database).
   - Select a vendor (or view all vendors).
-  - Specify the forecast horizon (e.g., 7, 30, or 90 days).
-  - Receive a sales forecast, trend graph, and explanations of key factors.
-- If a non-existent store is entered, the system prompts the user to select from existing stores or provides an average forecast for a group.
+  - Receive a sales forecast for the next 30 days.
 
 ## Example Usage Scenario (for Demo/Presentation)
 
 1. The user selects a store and vendor from the list.
-2. The system generates a sales forecast for the chosen period.
-3. A graph with predictions and explanations is displayed (e.g., impact of holidays, seasonality, product categories).
-4. Users can compare forecasts for different vendors or stores.
+2. The system generates a sales forecast for the chosen store.
+3. Users can compare forecasts for different vendors or stores.
 
 ## Technical Details
 
 - Modular architecture, easily extensible and scalable.
 - All data processing and training steps are logged.
-- Uses Airflow for orchestration, MLflow for experiment tracking and Feast for feature management.
+- Uses Airflow for orchestration, Temsorboard for experiment tracking.
 - Integration with external services via API is supported.
 
 ## Getting Started
