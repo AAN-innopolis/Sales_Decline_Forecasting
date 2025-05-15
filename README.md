@@ -1,6 +1,6 @@
 # Sales Decline Forecasting
 
-Sales Decline Forecasting is a comprehensive system for analyzing and predicting sales dynamics of alcoholic beverages in retail stores. The solution uses several state-of-the-art deep learning techniques, and is designed to work with datasets containing multiple vendors and stores.
+Sales Decline Forecasting is a comprehensive system for analyzing and predicting sales dynamics of alcoholic beverages in retail stores. The solution uses several state-of-the-art deep learning techniques, and is designed to work with datasets containing multiple stores.
 
 ## Who Needs This System and Why?
 
@@ -49,7 +49,7 @@ Sales Decline Forecasting is a comprehensive system for analyzing and predicting
 
 - Modular architecture, easily extensible and scalable.
 - All data processing and training steps are logged.
-- Uses Airflow for orchestration, Temsorboard for experiment tracking.
+- Uses Airflow for orchestration, Tensorboard for experiment tracking.
 - Integration with external services via API is supported.
 
 ## Getting Started
